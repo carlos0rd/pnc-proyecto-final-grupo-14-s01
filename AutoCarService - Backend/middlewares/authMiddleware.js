@@ -1,16 +1,19 @@
 const jwt = require('jsonwebtoken');
 
-function verificarToken(req, res, next) {
-  const token = req.headers['authorization'];
+//Verificar la validez del token JWT
+const verifyToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Token Bearer
 
   if (!token) return res.status(403).json({ error: 'Token requerido' });
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return res.status(401).json({ error: 'Token inválido' });
 
-    req.user = decoded;
+    req.user = user;
     next();
   });
-}
+};
 
-module.exports = verificarToken;
+module.exports = verifyToken;
+
