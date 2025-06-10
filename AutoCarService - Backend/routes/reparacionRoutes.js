@@ -1,4 +1,6 @@
 const express = require('express');
+const { allowRoles } = require('../middlewares/roleMiddleware');
+
 const {
   crearReparacion,
   obtenerReparaciones,
@@ -13,11 +15,12 @@ const router = express.Router();
 
 router.use(verifyToken);
 
-router.post('/', crearReparacion);
+router.post('/', allowRoles(2, 3), crearReparacion);
 router.get('/', obtenerReparaciones);
 router.get('/vehiculo/:identificador', obtenerPorVehiculo);
 router.get('/:id', obtenerReparacionPorId);
-router.put('/:id', editarReparacion);
-router.delete('/:id', eliminarReparacion);
+router.put('/:id', allowRoles(2, 3), editarReparacion);
+router.delete('/:id', allowRoles(2, 3), eliminarReparacion);
+
 
 module.exports = router;

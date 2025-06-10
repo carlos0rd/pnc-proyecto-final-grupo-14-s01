@@ -1,4 +1,6 @@
 const express = require('express');
+const { allowRoles } = require('../middlewares/roleMiddleware');
+
 const {
   crearVehiculo,
   obtenerVehiculos,
