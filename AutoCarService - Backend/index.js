@@ -5,6 +5,8 @@ const vehiculoRoutes = require('./routes/vehiculoRoutes');
 const reparacionRoutes = require('./routes/reparacionRoutes');
 const servicioRoutes = require('./routes/servicioRoutes');
 const errorHandler = require('./middlewares/errorHandler');
+const usuarioRoutes = require('./routes/userRoutes');
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,6 +17,7 @@ app.use('/vehiculos', vehiculoRoutes);
 app.use('/reparaciones', reparacionRoutes);
 app.use('/api/servicios', servicioRoutes);
 app.use(errorHandler);
+app.use('/usuarios', usuarioRoutes);
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
