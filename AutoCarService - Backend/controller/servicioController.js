@@ -1,28 +1,31 @@
 const db = require('../models/db');
+const { recalcularPrecio } = require('../helpers/reparaciones');
+const pool = require('../models/db');  
 
 // Crear servicio (solo mecánico o admin)
 exports.crearServicio = (req, res) => {
-  if (req.user.rol_id === 1) {
-    return res.status(403).json({ error: 'No tienes permiso para crear servicios.' });
-  }
+  const { nombre_servicio, descripcion,
+          fecha_inicio,   fecha_fin,
+          precio,         reparacion_id } = req.body;
 
-  const {
-    nombre_servicio,
-    descripcion,
-    fecha_inicio,
-    fecha_fin,
-    precio,
-    reparacion_id
-  } = req.body;
+  const sql = `INSERT INTO servicios
+               (nombre_servicio, descripcion,
+                fecha_inicio, fecha_fin, precio, reparacion_id)
+               VALUES (?, ?, ?, ?, ?, ?)`;
 
-  const sql = `INSERT INTO servicios 
-  (nombre_servicio, descripcion, fecha_inicio, fecha_fin, precio, reparacion_id)
-  VALUES (?, ?, ?, ?, ?, ?)`;
+  pool.query(sql,
+    [nombre_servicio, descripcion,
+     fecha_inicio,    fecha_fin,
+     precio,          reparacion_id],
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message });
 
-  db.query(sql, [nombre_servicio, descripcion, fecha_inicio, fecha_fin, precio, reparacion_id], (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ message: 'Servicio agregado correctamente' });
-  });
+      recalcularPrecio(reparacion_id)
+        .then(() => {
+          res.status(201).json({ message: 'Servicio agregado correctamente' });
+        })
+        .catch((e) => res.status(500).json({ error: e.message }));
+    });
 };
 
 exports.obtenerPorReparacion = (req, res) => {
@@ -51,38 +54,59 @@ exports.obtenerPorReparacion = (req, res) => {
 };
 
 // Editar servicio
-exports.editarServicio = (req, res) => {
-  if (req.user.rol_id === 1) {
-    return res.status(403).json({ error: 'No tienes permiso para editar servicios.' });
-  }
+exports.editarServicio = async (req, res) => {
+  try {
+    if (req.user.rol_id === 1) {
+      return res.status(403).json({ error: 'No tienes permiso para editar servicios.' });
+    }
 
-  const { id } = req.params;
-  const { nombre_servicio, descripcion, fecha_inicio, fecha_fin, precio } = req.body;
+    const { id } = req.params;
+    const { nombre_servicio, descripcion, fecha_inicio, fecha_fin, precio } = req.body;
 
-  const sql = `
-    UPDATE servicios SET 
-    nombre_servicio=?, descripcion=?, fecha_inicio=?, fecha_fin=?, precio=?
-    WHERE id=?
-  `;
+    const [rows] = await db.promise().query(
+      'SELECT reparacion_id FROM servicios WHERE id = ?',
+      [id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Servicio no encontrado' });
+    const reparacionId = rows[0].reparacion_id;
 
-  db.query(sql, [nombre_servicio, descripcion, fecha_inicio, fecha_fin, precio, id], (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
+    await db.promise().query(
+      `UPDATE servicios
+       SET nombre_servicio = ?, descripcion = ?, fecha_inicio = ?, fecha_fin = ?, precio = ?
+       WHERE id = ?`,
+      [nombre_servicio, descripcion, fecha_inicio, fecha_fin, precio, id]
+    );
+
+    await recalcularPrecio(reparacionId);
+
     res.json({ message: 'Servicio actualizado correctamente' });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 // Eliminar servicio
-exports.eliminarServicio = (req, res) => {
-  if (req.user.rol_id === 1) {
-    return res.status(403).json({ error: 'No tienes permiso para eliminar servicios.' });
-  }
+exports.eliminarServicio = async (req, res) => {
+  try {
+    if (req.user.rol_id === 1) {
+      return res.status(403).json({ error: 'No tienes permiso para eliminar servicios.' });
+    }
 
-  const { id } = req.params;
+    const { id } = req.params;
 
-  const sql = `DELETE FROM servicios WHERE id = ?`;
+    const [rows] = await db.promise().query(
+      'SELECT reparacion_id FROM servicios WHERE id = ?',
+      [id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Servicio no encontrado' });
+    const reparacionId = rows[0].reparacion_id;
 
-  db.query(sql, [id], (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
+    await db.promise().query('DELETE FROM servicios WHERE id = ?', [id]);
+
+    await recalcularPrecio(reparacionId);
+
     res.json({ message: 'Servicio eliminado correctamente' });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };

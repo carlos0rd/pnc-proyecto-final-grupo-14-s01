@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors({
   origin: 'http://localhost:5173', // puerto de Vite
-  credentials: true                // si usas cookies o headers personalizados
+  credentials: true              
 }));
 
 app.use(express.json());

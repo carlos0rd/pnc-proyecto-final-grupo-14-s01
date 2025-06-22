@@ -161,3 +161,15 @@ exports.obtenerPorVehiculo = (req, res) => {
     res.json(results);
   });
 };
+
+exports.recalcularValorReparacion = (reparacionId) => {
+  const sql = `
+    UPDATE reparaciones r
+    SET r.precio = (
+      SELECT IFNULL(SUM(s.precio), 0)
+      FROM servicios s
+      WHERE s.reparacion_id = ?
+    )
+    WHERE r.id = ?`;
+  return db.query(sql, [reparacionId, reparacionId]);
+};

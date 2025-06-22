@@ -1,7 +1,7 @@
 const db = require('../models/db');
 
 // Crear vehículo (solo mecánico o admin)
-exports.crearVehiculo = (req, res) => {
+/*exports.crearVehiculo = (req, res) => {
   const { modelo, marca, anio, color, placa, imagen, usuario_id } = req.body;
 
   if (req.user.rol_id === 1) {
@@ -15,23 +15,106 @@ exports.crearVehiculo = (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     res.status(201).json({ message: 'Vehículo registrado correctamente' });
   });
+};*/
+
+// POST /vehiculos
+exports.crearVehiculo = (req, res) => {
+
+  const {
+    modelo,
+    marca,
+    anio,
+    color,
+    placa,
+    imagen,        // nombre de archivo o URL
+    clienteEmail   // correo con el que se registró el cliente
+  } = req.body;
+
+  /* 1. Buscar el id del cliente por su email */
+  db.query(
+    "SELECT id FROM usuarios WHERE email = ? LIMIT 1",
+    [clienteEmail],
+    (err, rows) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).json({ error: "Error de base de datos" });
+      }
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "Cliente no encontrado" });
+      }
+
+      const usuario_id = rows[0].id;
+
+      /* 2. Insertar el vehículo */
+      db.query(
+        `INSERT INTO vehiculos
+         (modelo, marca, anio, color, placa, imagen, usuario_id)
+         VALUES (?,?,?,?,?,?,?)`,
+        [modelo, marca, anio, color, placa, imagen, usuario_id],
+        (err) => {
+          if (err) {
+            console.error(err);
+            return res.status(500).json({ error: "Error al registrar vehículo" });
+          }
+
+          res.status(201).json({ message: "Vehículo registrado correctamente" });
+        }
+      );
+    }
+  );
 };
 
-// Obtener vehículos
+
+// Obtener vehículos con paginación
 exports.obtenerVehiculos = (req, res) => {
   const { rol_id, id } = req.user;
+  const page   = parseInt(req.query.page)  || 1;
+  const limit  = parseInt(req.query.limit) || 5;
+  const offset = (page - 1) * limit;
 
-  let sql = 'SELECT * FROM vehiculos';
-  let params = [];
+  let sql = `
+    SELECT v.*,
+           u.nombre_completo AS cliente   -- ← nombre del dueño
+    FROM vehiculos v
+    JOIN usuarios  u ON u.id = v.usuario_id
+  `;
+
+  let countSql = `
+    SELECT COUNT(*) AS total
+    FROM vehiculos
+  `;
+
+  const params       = [];
+  const countParams  = [];
+
 
   if (rol_id === 1) {
-    sql += ' WHERE usuario_id = ?';
+    sql      += ' WHERE v.usuario_id = ?';
+    countSql += ' WHERE usuario_id   = ?';
     params.push(id);
+    countParams.push(id);
   }
 
-  db.query(sql, params, (err, results) => {
+  sql += ' LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+ 
+  db.query(countSql, countParams, (err, countRows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(results);
+
+    const total       = countRows[0].total;
+    const totalPages  = Math.ceil(total / limit);
+
+    db.query(sql, params, (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      res.json({
+        data: rows,           
+        currentPage: page,
+        totalPages,
+        totalItems: total
+      });
+    });
   });
 };
 
