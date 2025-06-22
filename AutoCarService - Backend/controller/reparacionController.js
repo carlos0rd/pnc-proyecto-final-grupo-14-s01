@@ -109,29 +109,33 @@ exports.obtenerReparacionPorId = (req, res) => {
   const { id } = req.params;
 
   const sql = `
-    SELECT r.*, v.modelo, v.placa, u.nombre_completo AS cliente
-    FROM reparaciones r
-    JOIN vehiculos v ON r.vehiculo_id = v.id
-    JOIN usuarios u ON v.usuario_id = u.id
-    WHERE r.id = ?
+    SELECT r.*, v.modelo, v.placa,
+           v.usuario_id           AS owner_id,
+           u.nombre_completo      AS cliente
+    FROM   reparaciones r
+    JOIN   vehiculos    v ON r.vehiculo_id = v.id
+    JOIN   usuarios     u ON v.usuario_id = u.id
+    WHERE  r.id = ?
   `;
 
   db.query(sql, [id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
+    if (!results.length)
+      return res.status(404).json({ error: "Reparación no encontrada" });
 
-    if (results.length === 0) {
-      return res.status(404).json({ error: 'Reparación no encontrada' });
+    const rep      = results[0];
+    const ownerId  = Number(rep.owner_id);   // <- SIEMPRE número
+    const current  = Number(req.user.id);    // <- SIEMPRE número
+
+    // 🔒 Permiso sólo si es el dueño
+    if (req.user.rol_id === 1 && ownerId !== current) {
+      return res.status(403).json({ error: "No tienes acceso a esta reparación" });
     }
 
-    const reparacion = results[0];
-
-    if (req.user.rol_id === 1 && reparacion.usuario_id !== req.user.id) {
-      return res.status(403).json({ error: 'No tienes acceso a esta reparación' });
-    }
-
-    res.json(reparacion);
+    res.json(rep);
   });
 };
+
 
 
 // Obtener reparaciones por vehículo ya sea por id o por placa
@@ -139,7 +143,7 @@ exports.obtenerPorVehiculo = (req, res) => {
   const identificador = req.params.identificador;
 
   const sql = `
-    SELECT r.*, v.modelo, v.placa, u.nombre_completo AS cliente
+    SELECT r.*, v.modelo, v.placa, v.usuario_id, u.nombre_completo AS cliente
     FROM reparaciones r
     JOIN vehiculos v ON r.vehiculo_id = v.id
     JOIN usuarios u ON v.usuario_id = u.id
@@ -151,7 +155,7 @@ exports.obtenerPorVehiculo = (req, res) => {
 
     if (req.user.rol_id === 1) {
       // Filtrar por cliente dueño del vehículo
-      results = results.filter(r => r.usuario_id === req.user.id);
+      results = results.filter(r => r.usuario_id == req.user.id);
     }
 
     res.json(results);

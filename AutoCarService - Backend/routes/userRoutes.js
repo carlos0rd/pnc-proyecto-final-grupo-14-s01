@@ -4,7 +4,8 @@ const {
   editarUsuario,
   editarUsuarioAdmin,
   cambiarRol,
-  eliminarUsuario
+  eliminarUsuario,
+  cambiarContrasena
 } = require('../controller/userController');
 
 const verifyToken = require('../middlewares/authMiddleware');
@@ -35,7 +36,8 @@ router.get("/me", (req, res) => {
 });
 
 router.get('/', allowRoles(3), obtenerUsuarios);                        
-router.put('/:id', editarUsuario);                                      
+router.put('/:id', editarUsuario);     
+router.put('/cambiar-contrasena/:id', cambiarContrasena);
 router.put('/admin/:id', allowRoles(3), editarUsuarioAdmin);           
 router.patch('/:id/rol', allowRoles(3), cambiarRol);                   
 router.delete('/:id', allowRoles(3), eliminarUsuario);

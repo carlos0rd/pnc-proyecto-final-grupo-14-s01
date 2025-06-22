@@ -25,27 +25,25 @@ exports.crearServicio = (req, res) => {
   });
 };
 
-// Obtener servicios por reparación
 exports.obtenerPorReparacion = (req, res) => {
   const { reparacion_id } = req.params;
 
   const sql = `
-    SELECT s.* 
-    FROM servicios s
-    JOIN reparaciones r ON s.reparacion_id = r.id
-    JOIN vehiculos v ON r.vehiculo_id = v.id
-    WHERE s.reparacion_id = ?
+    SELECT s.*, v.usuario_id AS owner_id
+    FROM   servicios    s
+    JOIN   reparaciones r ON s.reparacion_id = r.id
+    JOIN   vehiculos    v ON r.vehiculo_id  = v.id
+    WHERE  s.reparacion_id = ?
   `;
 
   db.query(sql, [reparacion_id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
 
-    // Verificación de propiedad para clientes
-    if (req.user.rol_id === 1 && results.length > 0) {
-      const usuario_id = results[0].usuario_id;
-      if (usuario_id !== req.user.id) {
-        return res.status(403).json({ error: 'No tienes acceso a estos servicios.' });
-      }
+    if (req.user.rol_id === 1 && results.length) {
+      const owner = Number(results[0].owner_id);
+      const me    = Number(req.user.id);
+      if (owner !== me)
+        return res.status(403).json({ error: "No tienes acceso a estos servicios" });
     }
 
     res.json(results);

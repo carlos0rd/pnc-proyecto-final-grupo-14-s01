@@ -1,4 +1,5 @@
 const db = require('../models/db');
+const bcrypt = require('bcrypt');
 
 // Obtener todos los usuarios (admin)
 exports.obtenerUsuarios = (req, res) => {
@@ -22,6 +23,29 @@ exports.editarUsuario = (req, res) => {
   db.query(sql, [nombre_completo, email, telefono, celular, id], (err) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ message: 'Usuario actualizado correctamente' });
+  });
+};
+
+exports.cambiarContrasena = (req, res) => {
+  const { id } = req.params;
+  const { nuevaContrasena } = req.body;
+
+  // Solo el usuario dueño puede cambiar su contraseña
+  if (req.user.rol_id !== 3 && req.user.id != id) {
+    return res.status(403).json({ error: 'No tienes permiso para cambiar esta contraseña' });
+  }
+
+  if (!nuevaContrasena || nuevaContrasena.length < 6) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+  }
+
+  const hashedPassword = bcrypt.hashSync(nuevaContrasena, 10);
+
+  const sql = `UPDATE usuarios SET contrasena = ? WHERE id = ?`;
+
+  db.query(sql, [hashedPassword, id], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ message: 'Contraseña actualizada correctamente' });
   });
 };
 

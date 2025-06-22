@@ -14,7 +14,7 @@ const router = express.Router();
 router.use(verifyToken);
 
 router.post('/', allowRoles(2, 3), crearServicio);
-router.get('/reparacion/:reparacion_id', obtenerPorReparacion);
+router.get('/reparacion/:reparacion_id', verifyToken, obtenerPorReparacion);
 router.put('/:id', allowRoles(2, 3), editarServicio);
 router.delete('/:id', allowRoles(2, 3), eliminarServicio);
 
