@@ -66,18 +66,27 @@ exports.crearVehiculo = (req, res) => {
 };
 
 
-// Obtener vehículos con paginación
+// Obtener vehículos con paginación y nombre del mecánico más reciente
 exports.obtenerVehiculos = (req, res) => {
   const { rol_id, id } = req.user;
   const page   = parseInt(req.query.page)  || 1;
   const limit  = parseInt(req.query.limit) || 5;
   const offset = (page - 1) * limit;
 
+  // Consulta principal con LEFT JOIN para obtener nombre del mecánico más reciente
   let sql = `
     SELECT v.*,
-           u.nombre_completo AS cliente   -- ← nombre del dueño
+           u.nombre_completo AS cliente,
+           (
+             SELECT m.nombre_completo
+             FROM reparaciones r
+             JOIN usuarios m ON r.mecanico_id = m.id
+             WHERE r.vehiculo_id = v.id
+             ORDER BY r.fecha_fin DESC
+             LIMIT 1
+           ) AS mecanico
     FROM vehiculos v
-    JOIN usuarios  u ON u.id = v.usuario_id
+    JOIN usuarios u ON u.id = v.usuario_id
   `;
 
   let countSql = `
@@ -85,31 +94,30 @@ exports.obtenerVehiculos = (req, res) => {
     FROM vehiculos
   `;
 
-  const params       = [];
-  const countParams  = [];
-
+  const params = [];
+  const countParams = [];
 
   if (rol_id === 1) {
-    sql      += ' WHERE v.usuario_id = ?';
-    countSql += ' WHERE usuario_id   = ?';
+    sql += ' WHERE v.usuario_id = ?';
+    countSql += ' WHERE usuario_id = ?';
     params.push(id);
     countParams.push(id);
   }
 
   sql += ' LIMIT ? OFFSET ?';
   params.push(limit, offset);
- 
+
   db.query(countSql, countParams, (err, countRows) => {
     if (err) return res.status(500).json({ error: err.message });
 
-    const total       = countRows[0].total;
-    const totalPages  = Math.ceil(total / limit);
+    const total = countRows[0].total;
+    const totalPages = Math.ceil(total / limit);
 
     db.query(sql, params, (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
 
       res.json({
-        data: rows,           
+        data: rows,
         currentPage: page,
         totalPages,
         totalItems: total
@@ -117,6 +125,7 @@ exports.obtenerVehiculos = (req, res) => {
     });
   });
 };
+
 
 // Editar vehículo (solo mecánico o admin)
 exports.editarVehiculo = (req, res) => {
