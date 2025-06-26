@@ -7,6 +7,7 @@ const servicioRoutes = require('./routes/servicioRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 const usuarioRoutes = require('./routes/userRoutes');
 const cors = require('cors');
+const path = require('path');
 
 
 const app = express();
@@ -19,9 +20,10 @@ app.use(cors({
 
 app.use(express.json());
 
+app.use('/imagenes', express.static(path.join(__dirname, 'imagenes')));
 app.use('/auth', authRoutes);
 app.use('/vehiculos', vehiculoRoutes);
-app.use('/reparaciones', reparacionRoutes);
+app.use('/reparaciones', reparacionRoutes); 
 app.use('/api/servicios', servicioRoutes);
 app.use('/usuarios', usuarioRoutes);
 

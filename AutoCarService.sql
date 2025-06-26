@@ -62,7 +62,8 @@ INSERT INTO roles (nombre) VALUES ('cliente'), ('mecanico'), ('admin');
 ALTER TABLE usuarios
 MODIFY COLUMN rol_id INT NOT NULL DEFAULT 1;
 
-
+ALTER TABLE reparaciones
+  MODIFY precio DECIMAL(10,2) NOT NULL DEFAULT 0;
 
 
 

@@ -1,36 +1,24 @@
 const db = require('../models/db');
-
-// Crear vehículo (solo mecánico o admin)
-/*exports.crearVehiculo = (req, res) => {
-  const { modelo, marca, anio, color, placa, imagen, usuario_id } = req.body;
-
-  if (req.user.rol_id === 1) {
-    return res.status(403).json({ error: 'Forbidden.' });
-  }
-
-  const sql = `INSERT INTO vehiculos (modelo, marca, anio, color, placa, imagen, usuario_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`;
-
-  db.query(sql, [modelo, marca, anio, color, placa, imagen, usuario_id], (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ message: 'Vehículo registrado correctamente' });
-  });
-};*/
+const fs   = require("fs");
+const path = require('path');
 
 // POST /vehiculos
 exports.crearVehiculo = (req, res) => {
-
+  /* 1. Campos de texto (vienen en req.body)  */
   const {
     modelo,
     marca,
     anio,
     color,
     placa,
-    imagen,        // nombre de archivo o URL
-    clienteEmail   // correo con el que se registró el cliente
-  } = req.body;
+    clienteEmail      // ← el e-mail del cliente que ya existe
+  } = req.body;       // ⛔ NO desestructuramos “imagen”: Multer lo entrega en req.file
 
-  /* 1. Buscar el id del cliente por su email */
+  if (!modelo || !marca || !anio || !color || !placa || !clienteEmail) {
+    return res.status(400).json({ error: "Campos obligatorios incompletos" });
+  }
+
+  /* 2. Buscar el id del cliente a partir de su e-mail */
   db.query(
     "SELECT id FROM usuarios WHERE email = ? LIMIT 1",
     [clienteEmail],
@@ -46,34 +34,42 @@ exports.crearVehiculo = (req, res) => {
 
       const usuario_id = rows[0].id;
 
-      /* 2. Insertar el vehículo */
+      /* 3. Procesar la imagen (si la enviaron)                             
+             upload.single("imagen") guarda el archivo y coloca los
+             datos en req.file  */
+      const imagenRuta = req.file ? `/imagenes/${req.file.filename}` : null;
+
+      /* 4. Insertar el vehículo */
       db.query(
         `INSERT INTO vehiculos
          (modelo, marca, anio, color, placa, imagen, usuario_id)
          VALUES (?,?,?,?,?,?,?)`,
-        [modelo, marca, anio, color, placa, imagen, usuario_id],
+        [modelo, marca, anio, color, placa, imagenRuta, usuario_id],
         (err) => {
           if (err) {
             console.error(err);
-            return res.status(500).json({ error: "Error al registrar vehículo" });
+            return res
+              .status(500)
+              .json({ error: "Error al registrar vehículo" });
           }
 
-          res.status(201).json({ message: "Vehículo registrado correctamente" });
+          res
+            .status(201)
+            .json({ message: "Vehículo registrado correctamente" });
         }
       );
     }
   );
 };
 
-
-// Obtener vehículos con paginación y nombre del mecánico más reciente
+// Obtener vehículos con paginación
 exports.obtenerVehiculos = (req, res) => {
   const { rol_id, id } = req.user;
   const page   = parseInt(req.query.page)  || 1;
   const limit  = parseInt(req.query.limit) || 5;
   const offset = (page - 1) * limit;
 
-  // Consulta principal con LEFT JOIN para obtener nombre del mecánico más reciente
+  // Consulta principal para obtener nombre del mecánico más reciente
   let sql = `
     SELECT v.*,
            u.nombre_completo AS cliente,
@@ -127,20 +123,44 @@ exports.obtenerVehiculos = (req, res) => {
 };
 
 
-// Editar vehículo (solo mecánico o admin)
+
+// PUT /vehiculos/:id  (single("imagen"))
 exports.editarVehiculo = (req, res) => {
-  if (req.user.rol_id === 1) {
-    return res.status(403).json({ error: 'No tienes permiso para editar vehículos.' });
+  if (req.user.rol_id === 1) {   
+    return res.status(403).json({ error: "No tienes permiso para editar vehículos." });
   }
 
   const { id } = req.params;
   const { modelo, marca, anio, color, placa } = req.body;
 
-  const sql = `UPDATE vehiculos SET modelo=?, marca=?, anio=?, color=?, placa=? WHERE id = ?`;
-
-  db.query(sql, [modelo, marca, anio, color, placa, id], (err, result) => {
+  db.query("SELECT imagen FROM vehiculos WHERE id = ?", [id], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ message: 'Vehículo actualizado correctamente' });
+    if (rows.length === 0) return res.status(404).json({ error: "Vehículo no encontrado" });
+
+    const imagenAntigua = rows[0].imagen;  
+    let   nuevaRutaImg  = imagenAntigua;     // por defecto se conserva la misma
+
+    if (req.file) {
+      nuevaRutaImg = `/imagenes/${req.file.filename}`;
+
+      if (imagenAntigua) {
+        const nombreViejo = path.basename(imagenAntigua);         // 1750….png
+        const rutaFisica  = path.join(__dirname, "..", "uploads", "vehiculos", nombreViejo);
+
+        if (fs.existsSync(rutaFisica)) {
+          fs.unlink(rutaFisica, (e) => e && console.log("No se pudo actualizar la imagen:", e));
+        }
+      }
+    }
+
+    const sql = `UPDATE vehiculos 
+                 SET modelo = ?, marca = ?, anio = ?, color = ?, placa = ?, imagen = ?
+                 WHERE id = ?`;
+
+    db.query(sql, [modelo, marca, anio, color, placa, nuevaRutaImg, id], (err2) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+      res.json({ message: "Vehículo actualizado correctamente" });
+    });
   });
 };
 
@@ -172,3 +192,4 @@ exports.obtenerVehiculoPorId = (req, res) => {
     res.json(results[0]);
   });
 };
+
