@@ -228,3 +228,16 @@ AutoCarService-Backend/
 └── package.json           # Dependencias y scripts
 ```
 
+# Credenciales
+`Amdministrador:`  
+email: admin@gmail.com   
+password: Admin13  
+
+`Mecánico:`  
+email: mecanico@gmail.com  
+password: Mecanico123  
+
+`Cliente:`  
+email: cliente@gmail.com  
+password: Cliente22  
+
