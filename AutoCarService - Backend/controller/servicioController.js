@@ -3,6 +3,7 @@ const { recalcularPrecio } = require('../helpers/reparaciones');
 const pool = require('../models/db');  
 
 // Crear servicio (solo mecánico o admin)
+/*
 exports.crearServicio = (req, res) => {
   const { nombre_servicio, descripcion,
           fecha_inicio,   fecha_fin,
@@ -27,6 +28,100 @@ exports.crearServicio = (req, res) => {
         .catch((e) => res.status(500).json({ error: e.message }));
     });
 };
+*/
+
+// Crear servicio (solo mecánico o admin)
+exports.crearServicio = async (req, res) => {
+  try {
+    // Cliente (rol 1) NO puede crear servicios
+    if (req.user.rol_id === 1) {
+      return res
+        .status(403)
+        .json({ error: 'No tienes permiso para crear servicios.' });
+    }
+
+    const {
+      nombre_servicio,
+      descripcion,
+      fecha_inicio,
+      fecha_fin,
+      precio,
+      reparacion_id,
+      repuestos, // <-- array de { repuesto_id, cantidad }
+    } = req.body;
+
+    if (!nombre_servicio || !descripcion || !reparacion_id) {
+      return res.status(400).json({
+        error: 'nombre_servicio, descripcion y reparacion_id son obligatorios',
+      });
+    }
+
+    const conn = await db.promise().getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // 1) Insertar el servicio
+      const [result] = await conn.query(
+        `INSERT INTO servicios
+           (nombre_servicio, descripcion,
+            fecha_inicio, fecha_fin, precio, reparacion_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          nombre_servicio,
+          descripcion,
+          fecha_inicio || null,
+          fecha_fin || null,
+          precio || 0,
+          reparacion_id,
+        ]
+      );
+
+      const servicioId = result.insertId;
+
+      // 2) Insertar repuestos en tabla puente (si vienen)
+      if (Array.isArray(repuestos) && repuestos.length > 0) {
+        const valores = [];
+
+        repuestos.forEach((r) => {
+          const repuestoId = Number(r.repuesto_id);
+          const cantidad = Number(r.cantidad) || 1;
+          if (repuestoId && cantidad > 0) {
+            valores.push([servicioId, repuestoId, cantidad]);
+          }
+        });
+
+        if (valores.length > 0) {
+          await conn.query(
+            `INSERT INTO servicio_repuesto
+               (servicio_id, repuesto_id, cantidad)
+             VALUES ?`,
+            [valores]
+          );
+        }
+      }
+
+      await conn.commit();
+
+      // 3) Recalcular el precio total de la reparación
+      await recalcularPrecio(reparacion_id);
+
+      return res.status(201).json({
+        message: 'Servicio agregado correctamente',
+        servicio_id: servicioId,
+      });
+    } catch (err) {
+      await conn.rollback();
+      console.error('Error creando servicio:', err);
+      return res.status(500).json({ error: err.message });
+    } finally {
+      conn.release();
+    }
+  } catch (err) {
+    console.error('Error general en crearServicio:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 
 exports.obtenerPorReparacion = (req, res) => {
   const { reparacion_id } = req.params;
@@ -108,5 +203,52 @@ exports.eliminarServicio = async (req, res) => {
     res.json({ message: 'Servicio eliminado correctamente' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+// GET /api/servicios/:id/completo
+// Devuelve datos del servicio con sus repuestos asociados
+exports.obtenerServicioCompleto = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // 1) Datos del servicio
+    const [servRows] = await db.promise().query(
+      `SELECT s.*,
+              r.fecha_inicio AS reparacion_fecha_inicio,
+              r.fecha_fin   AS reparacion_fecha_fin,
+              r.estado      AS reparacion_estado
+       FROM servicios s
+       JOIN reparaciones r ON s.reparacion_id = r.id
+       WHERE s.id = ?`,
+      [id]
+    );
+
+    if (servRows.length === 0) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
+
+    const servicio = servRows[0];
+
+    // 2) Repuestos usados en ese servicio
+    const [repRows] = await db.promise().query(
+      `SELECT sr.repuesto_id,
+              sr.cantidad,
+              rp.nombre,
+              rp.precio_unitario,
+              rp.descripcion,
+              rp.categoria_id
+       FROM servicio_repuesto sr
+       JOIN repuestos rp ON sr.repuesto_id = rp.id
+       WHERE sr.servicio_id = ?`,
+      [id]
+    );
+
+    servicio.repuestos = repRows; // array de repuestos
+
+    return res.json(servicio);
+  } catch (err) {
+    console.error('Error al obtener servicio completo:', err);
+    return res.status(500).json({ error: err.message });
   }
 };
