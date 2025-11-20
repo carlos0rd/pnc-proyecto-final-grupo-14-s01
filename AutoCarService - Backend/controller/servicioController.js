@@ -1,6 +1,7 @@
 const db = require('../models/db');
 const { recalcularPrecio } = require('../helpers/reparaciones');
-const pool = require('../models/db');  
+const pool = require('../models/db');
+const poolPromise = pool.promise(); // Pool con promesas para transacciones  
 
 // Crear servicio (solo mecánico o admin)
 /*
@@ -56,7 +57,7 @@ exports.crearServicio = async (req, res) => {
       });
     }
 
-    const conn = await db.promise().getConnection();
+    const conn = await poolPromise.getConnection();
     try {
       await conn.beginTransaction();
 
@@ -158,14 +159,14 @@ exports.editarServicio = async (req, res) => {
     const { id } = req.params;
     const { nombre_servicio, descripcion, fecha_inicio, fecha_fin, precio } = req.body;
 
-    const [rows] = await db.promise().query(
+    const [rows] = await poolPromise.query(
       'SELECT reparacion_id FROM servicios WHERE id = ?',
       [id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Servicio no encontrado' });
     const reparacionId = rows[0].reparacion_id;
 
-    await db.promise().query(
+    await poolPromise.query(
       `UPDATE servicios
        SET nombre_servicio = ?, descripcion = ?, fecha_inicio = ?, fecha_fin = ?, precio = ?
        WHERE id = ?`,
@@ -189,14 +190,14 @@ exports.eliminarServicio = async (req, res) => {
 
     const { id } = req.params;
 
-    const [rows] = await db.promise().query(
+    const [rows] = await poolPromise.query(
       'SELECT reparacion_id FROM servicios WHERE id = ?',
       [id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Servicio no encontrado' });
     const reparacionId = rows[0].reparacion_id;
 
-    await db.promise().query('DELETE FROM servicios WHERE id = ?', [id]);
+    await poolPromise.query('DELETE FROM servicios WHERE id = ?', [id]);
 
     await recalcularPrecio(reparacionId);
 
@@ -213,11 +214,11 @@ exports.obtenerServicioCompleto = async (req, res) => {
 
   try {
     // 1) Datos del servicio
-    const [servRows] = await db.promise().query(
+    const [servRows] = await poolPromise.query(
       `SELECT s.*,
               r.fecha_inicio AS reparacion_fecha_inicio,
               r.fecha_fin   AS reparacion_fecha_fin,
-              r.estado      AS reparacion_estado
+              r.status      AS reparacion_status
        FROM servicios s
        JOIN reparaciones r ON s.reparacion_id = r.id
        WHERE s.id = ?`,
@@ -231,7 +232,7 @@ exports.obtenerServicioCompleto = async (req, res) => {
     const servicio = servRows[0];
 
     // 2) Repuestos usados en ese servicio
-    const [repRows] = await db.promise().query(
+    const [repRows] = await poolPromise.query(
       `SELECT sr.repuesto_id,
               sr.cantidad,
               rp.nombre,

@@ -19,6 +19,7 @@ exports.obtenerFacturas = (req, res) => {
       f.total,
       f.status,
       f.reparacion_id,
+      f.usuario_id,
       v.marca,
       v.modelo,
       v.placa,
@@ -42,7 +43,14 @@ exports.obtenerFacturas = (req, res) => {
   db.query(sql, params, (err, results) => {
     if (err) {
       console.error('Error fetching invoices:', err);
-      return res.status(500).json({ error: 'Error al obtener facturas' });
+      console.error('SQL:', sql);
+      console.error('Params:', params);
+      return res.status(500).json({ error: 'Error al obtener facturas', details: err.message });
+    }
+
+    // Si no hay resultados, devolver array vacío en lugar de error
+    if (!results || results.length === 0) {
+      return res.json([]);
     }
 
     // Format the response
