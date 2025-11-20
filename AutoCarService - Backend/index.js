@@ -7,6 +7,7 @@ const servicioRoutes = require('./routes/servicioRoutes');
 const repuestosRoutes = require('./routes/repuestosRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 const usuarioRoutes = require('./routes/userRoutes');
+const facturaRoutes = require('./routes/facturaRoutes');
 const cors = require('cors');
 const path = require('path');
 
@@ -28,6 +29,7 @@ app.use('/reparaciones', reparacionRoutes);
 app.use('/api/servicios', servicioRoutes);
 app.use('/usuarios', usuarioRoutes);
 app.use('/repuestos', repuestosRoutes);
+app.use('/facturas', facturaRoutes);
 
 app.use(errorHandler);
 
