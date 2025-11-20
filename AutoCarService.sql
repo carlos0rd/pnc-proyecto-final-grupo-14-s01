@@ -37,10 +37,11 @@ CREATE TABLE reparaciones (
   descripcion TEXT,
   fecha_inicio DATE NOT NULL,
   fecha_fin DATE,
-  status ENUM('Pendiente', 'En curso', 'Finalizado', 'Rechazado por el cliente') DEFAULT 'Pendiente',
+  status ENUM('Pendiente', 'En curso', 'Finalizado', 'Rechazado por el cliente', 'Aprobado por el cliente') DEFAULT 'Pendiente',
   precio DECIMAL(10,2),
   vehiculo_id INT,
   mecanico_id INT,
+  fecha_aprobacion DATETIME NULL,
   FOREIGN KEY (vehiculo_id) REFERENCES vehiculos(id) ON DELETE CASCADE,
   FOREIGN KEY (mecanico_id) REFERENCES usuarios(id) ON DELETE SET NULL
 );
