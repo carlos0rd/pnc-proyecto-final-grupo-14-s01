@@ -1,4 +1,6 @@
 const db = require('../models/db');
+const fs = require('fs');
+const path = require('path');
 
 exports.crearReparacion = (req, res) => {
   if (req.user.rol_id === 1) {
@@ -15,9 +17,15 @@ exports.crearReparacion = (req, res) => {
     vehiculo_id
   } = req.body;
 
+  // Procesar la imagen "antes" (si la enviaron)
+  // upload.fields() guarda los archivos en req.files como un objeto
+  const imagenAntesRuta = req.files && req.files.imagen_antes && req.files.imagen_antes[0]
+    ? `/imagenes/${req.files.imagen_antes[0].filename}`
+    : null;
+
   const sql = `INSERT INTO reparaciones 
-  (tipo_reparacion, descripcion, fecha_inicio, fecha_fin, status, precio, vehiculo_id, mecanico_id) 
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+  (tipo_reparacion, descripcion, fecha_inicio, fecha_fin, status, precio, imagen_antes, vehiculo_id, mecanico_id) 
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
   db.query(sql, [
     tipo_reparacion,
@@ -26,6 +34,7 @@ exports.crearReparacion = (req, res) => {
     fecha_fin,
     status,
     precio,
+    imagenAntesRuta,
     vehiculo_id,
     req.user.id
   ], (err, result) => {
@@ -72,21 +81,59 @@ exports.editarReparacion = (req, res) => {
     precio
   } = req.body;
 
-  const sql = `UPDATE reparaciones 
-               SET tipo_reparacion=?, descripcion=?, fecha_inicio=?, fecha_fin=?, status=?, precio=? 
-               WHERE id=?`;
-
-  db.query(sql, [
-    tipo_reparacion,
-    descripcion,
-    fecha_inicio,
-    fecha_fin,
-    status,
-    precio,
-    id
-  ], (err, result) => {
+  // Primero obtener las imágenes actuales
+  db.query("SELECT imagen_antes, imagen_despues FROM reparaciones WHERE id = ?", [id], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ message: 'Reparación actualizada correctamente' });
+    if (rows.length === 0) return res.status(404).json({ error: "Reparación no encontrada" });
+
+    const imagenAntesAntigua = rows[0].imagen_antes;
+    const imagenDespuesAntigua = rows[0].imagen_despues;
+    let nuevaRutaImgAntes = imagenAntesAntigua; // por defecto se conserva la misma
+    let nuevaRutaImgDespues = imagenDespuesAntigua; // por defecto se conserva la misma
+
+    // Función auxiliar para eliminar imagen antigua
+    const eliminarImagen = (rutaImagen) => {
+      if (rutaImagen) {
+        const nombreViejo = path.basename(rutaImagen);
+        const rutaFisica = path.join(__dirname, "..", "imagenes", nombreViejo);
+        if (fs.existsSync(rutaFisica)) {
+          fs.unlink(rutaFisica, (e) => e && console.log("No se pudo eliminar la imagen antigua:", e));
+        }
+      }
+    };
+
+    // Si se subió una nueva imagen "después"
+    if (req.files && req.files.imagen_despues && req.files.imagen_despues[0]) {
+      nuevaRutaImgDespues = `/imagenes/${req.files.imagen_despues[0].filename}`;
+      // Eliminar la imagen antigua si existe
+      eliminarImagen(imagenDespuesAntigua);
+    }
+
+    // Si se subió una nueva imagen "antes" (aunque normalmente solo se sube al crear)
+    if (req.files && req.files.imagen_antes && req.files.imagen_antes[0]) {
+      nuevaRutaImgAntes = `/imagenes/${req.files.imagen_antes[0].filename}`;
+      // Eliminar la imagen antigua si existe
+      eliminarImagen(imagenAntesAntigua);
+    }
+
+    const sql = `UPDATE reparaciones 
+                 SET tipo_reparacion=?, descripcion=?, fecha_inicio=?, fecha_fin=?, status=?, precio=?, imagen_antes=?, imagen_despues=? 
+                 WHERE id=?`;
+
+    db.query(sql, [
+      tipo_reparacion,
+      descripcion,
+      fecha_inicio,
+      fecha_fin,
+      status,
+      precio,
+      nuevaRutaImgAntes,
+      nuevaRutaImgDespues,
+      id
+    ], (err2, result) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+      res.json({ message: 'Reparación actualizada correctamente' });
+    });
   });
 };
 

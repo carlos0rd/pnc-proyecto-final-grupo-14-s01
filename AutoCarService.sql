@@ -65,5 +65,10 @@ MODIFY COLUMN rol_id INT NOT NULL DEFAULT 1;
 ALTER TABLE reparaciones
   MODIFY precio DECIMAL(10,2) NOT NULL DEFAULT 0;
 
+-- Agregar columnas para imágenes antes y después de la reparación
+ALTER TABLE reparaciones
+  ADD COLUMN imagen_antes VARCHAR(255) NULL AFTER precio,
+  ADD COLUMN imagen_despues VARCHAR(255) NULL AFTER imagen_antes;
+
 
 
