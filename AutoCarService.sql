@@ -64,6 +64,128 @@ MODIFY COLUMN rol_id INT NOT NULL DEFAULT 1;
 
 ALTER TABLE reparaciones
   MODIFY precio DECIMAL(10,2) NOT NULL DEFAULT 0;
+  
+  CREATE TABLE categoria_repuesto (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE repuestos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(150) NOT NULL,
+  precio_unitario DECIMAL(10,2) NOT NULL,
+  categoria_id INT NOT NULL,
+  descripcion TEXT,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  CONSTRAINT fk_repuestos_categoria
+    FOREIGN KEY (categoria_id)
+    REFERENCES categoria_repuesto(id)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE
+);
+
+CREATE TABLE reparacion_repuesto (
+  reparacion_id INT NOT NULL,
+  repuesto_id INT NOT NULL,
+  cantidad INT NOT NULL DEFAULT 1,
+
+  PRIMARY KEY (reparacion_id, repuesto_id),
+
+  CONSTRAINT fk_rep_rep_reparacion
+    FOREIGN KEY (reparacion_id)
+    REFERENCES reparaciones(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+
+  CONSTRAINT fk_rep_rep_repuesto
+    FOREIGN KEY (repuesto_id)
+    REFERENCES repuestos(id)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS servicio_repuesto (
+  servicio_id INT NOT NULL,
+  repuesto_id INT NOT NULL,
+  cantidad INT NOT NULL DEFAULT 1,
+
+  PRIMARY KEY (servicio_id, repuesto_id),
+
+  CONSTRAINT fk_servicio_repuesto_servicio
+    FOREIGN KEY (servicio_id)
+    REFERENCES servicios(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+
+  CONSTRAINT fk_servicio_repuesto_repuesto
+    FOREIGN KEY (repuesto_id)
+    REFERENCES repuestos(id)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE
+);
+
+INSERT INTO categoria_repuesto (nombre) VALUES
+('Filtros'),
+('Frenos'),
+('Suspensión'),
+('Motor'),
+('Eléctrico'),
+('Transmisión'),
+('Aceites y lubricantes'),
+('Refrigeración'),
+('Escape'),
+('Dirección');
+
+
+INSERT INTO repuestos (nombre, precio_unitario, categoria_id, descripcion, activo) VALUES
+-- Filtros (categoria_id = 1)
+('Filtro de aceite Toyota', 12.50, 1, 'Filtro de aceite estándar para motores Toyota 1.8-2.5L', 1),
+('Filtro de aire universal', 15.00, 1, 'Filtro de aire para múltiples modelos de motor', 1),
+('Filtro de combustible Bosch', 22.00, 1, 'Filtro de gasolina de alta eficiencia', 1),
+
+-- Frenos (categoria_id = 2)
+('Pastillas de freno delanteras', 35.00, 2, 'Juego de pastillas delanteras cerámicas', 1),
+('Disco de freno ventilado', 55.00, 2, 'Disco ventilado de 280mm', 1),
+('Líquido de frenos DOT 4', 8.00, 2, 'Bote de 500ml de líquido DOT 4', 1),
+
+-- Suspensión (categoria_id = 3)
+('Amortiguador delantero KYB', 75.00, 3, 'Amortiguador hidráulico reforzado', 1),
+('Buje de horquilla', 12.00, 3, 'Buje de goma para brazo de suspensión', 1),
+
+-- Motor (categoria_id = 4)
+('Bujía NGK Iridium', 10.00, 4, 'Bujía de iridio de alto rendimiento', 1),
+('Correa de distribución', 45.00, 4, 'Correa de goma reforzada', 1),
+('Sensor MAP', 38.00, 4, 'Sensor de presión absoluta del múltiple', 1),
+
+-- Eléctrico (categoria_id = 5)
+('Batería 12V 65Ah', 90.00, 5, 'Batería libre de mantenimiento', 1),
+('Alternador reconstruido', 120.00, 5, 'Alternador para motor 1.6-2.0L', 1),
+('Bombillo H4 12V', 6.00, 5, 'Bombillo halógeno estándar', 1),
+
+-- Transmisión (categoria_id = 6)
+('Kit de clutch', 140.00, 6, 'Disco, prensa y balero de empuje', 1),
+('Aceite para transmisión ATF', 11.00, 6, 'Aceite ATF Dexron III por litro', 1),
+
+-- Aceites y Lubricantes (categoria_id = 7)
+('Aceite 10W-30 sintético', 9.00, 7, 'Litro de aceite sintético', 1),
+('Grasa multiusos', 5.00, 7, 'Tubo de 250g de grasa amarilla', 1),
+
+-- Refrigeración (categoria_id = 8)
+('Bomba de agua', 48.00, 8, 'Bomba metálica reforzada', 1),
+('Refrigerante largo uso', 7.50, 8, 'Galón de refrigerante verde', 1),
+
+-- Escape (categoria_id = 9)
+('Silenciador universal', 60.00, 9, 'Silenciador de acero inoxidable', 1),
+
+-- Dirección (categoria_id = 10)
+('Rotula de dirección', 18.00, 10, 'Rótula para sistema de dirección mecánica', 1),
+('Brazo axial', 28.00, 10, 'Barra axial reforzada', 1);
+
+
+
+
+
+
 
 
 
