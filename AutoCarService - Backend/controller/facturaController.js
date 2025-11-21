@@ -300,11 +300,13 @@ exports.crearFactura = (req, res) => {
     return res.status(400).json({ error: 'reparacion_id es requerido' });
   }
 
-  // Get repair data to calculate totals
+  // Get repair data to calculate totals and validate status
   const reparacionSql = `
     SELECT 
       r.id,
       r.precio,
+      r.status,
+      r.mecanico_id,
       r.vehiculo_id,
       v.usuario_id
     FROM reparaciones r
@@ -323,24 +325,53 @@ exports.crearFactura = (req, res) => {
     }
 
     const reparacion = reparaciones[0];
+
+    // Validate repair status is "Finalizado"
+    if (reparacion.status !== 'Finalizado') {
+      return res.status(400).json({ 
+        error: 'Solo se pueden generar facturas para reparaciones con estado "Finalizado"',
+        status_actual: reparacion.status
+      });
+    }
+
+    // Authorization check: Mechanics can only create invoices for repairs they created
+    // Admins can create invoices for any repair
+    if (rol_id === 2 && Number(reparacion.mecanico_id) !== Number(req.user.id)) {
+      return res.status(403).json({ 
+        error: 'No tienes permiso para generar facturas de reparaciones que no creaste' 
+      });
+    }
+
     const subtotal = parseFloat(reparacion.precio || 0);
     const total = subtotal; // Can add taxes here if needed
 
-    // Generate invoice number
-    const { generarNumeroFactura } = require('../helpers/facturaHelper');
-    const numero_factura = generarNumeroFactura();
-
     // Check if invoice already exists for this repair
-    const checkSql = 'SELECT id FROM facturas WHERE reparacion_id = ?';
+    const checkSql = 'SELECT id, numero_factura, fecha, subtotal, total, status FROM facturas WHERE reparacion_id = ?';
     db.query(checkSql, [reparacion_id], (err, existing) => {
       if (err) {
         console.error('Error checking existing invoice:', err);
         return res.status(500).json({ error: 'Error al verificar factura existente' });
       }
 
+      // If invoice already exists, return the existing invoice data
       if (existing.length > 0) {
-        return res.status(400).json({ error: 'Ya existe una factura para esta reparación' });
+        const existingInvoice = existing[0];
+        return res.status(200).json({
+          message: 'Ya existe una factura para esta reparación',
+          factura: {
+            id: existingInvoice.id,
+            numero_factura: existingInvoice.numero_factura,
+            fecha: existingInvoice.fecha,
+            subtotal: parseFloat(existingInvoice.subtotal),
+            total: parseFloat(existingInvoice.total),
+            status: existingInvoice.status
+          }
+        });
       }
+
+      // Generate invoice number (only if invoice doesn't exist)
+      const { generarNumeroFactura } = require('../helpers/facturaHelper');
+      const numero_factura = generarNumeroFactura();
 
       // Create invoice
       const insertSql = `

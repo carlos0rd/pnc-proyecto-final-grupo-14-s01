@@ -13,7 +13,6 @@ exports.crearReparacion = (req, res) => {
     fecha_inicio,
     fecha_fin,
     status,
-    precio,
     vehiculo_id
   } = req.body;
 
@@ -23,9 +22,10 @@ exports.crearReparacion = (req, res) => {
     ? `/imagenes/${req.files.imagen_antes[0].filename}`
     : null;
 
+  // Price is now calculated from services, so set to NULL initially
   const sql = `INSERT INTO reparaciones 
   (tipo_reparacion, descripcion, fecha_inicio, fecha_fin, status, precio, imagen_antes, vehiculo_id, mecanico_id) 
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`;
 
   db.query(sql, [
     tipo_reparacion,
@@ -33,7 +33,6 @@ exports.crearReparacion = (req, res) => {
     fecha_inicio,
     fecha_fin,
     status,
-    precio,
     imagenAntesRuta,
     vehiculo_id,
     req.user.id
@@ -47,7 +46,8 @@ exports.obtenerReparaciones = (req, res) => {
   const { rol_id, id } = req.user;
 
   let sql = `
-    SELECT r.*, v.modelo, v.placa, u.nombre_completo AS cliente 
+    SELECT r.*, v.modelo, v.placa, u.nombre_completo AS cliente,
+           (SELECT COUNT(*) FROM servicios s WHERE s.reparacion_id = r.id) AS tiene_servicios
     FROM reparaciones r
     JOIN vehiculos v ON r.vehiculo_id = v.id
     JOIN usuarios u ON v.usuario_id = u.id
@@ -62,7 +62,15 @@ exports.obtenerReparaciones = (req, res) => {
 
   db.query(sql, params, (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(results);
+    
+    // Format results: precio will be NULL if no services, or the calculated sum
+    const formatted = results.map(r => ({
+      ...r,
+      precio: r.precio === null ? null : parseFloat(r.precio),
+      tiene_servicios: r.tiene_servicios > 0
+    }));
+    
+    res.json(formatted);
   });
 };
 
@@ -77,8 +85,8 @@ exports.editarReparacion = (req, res) => {
     descripcion,
     fecha_inicio,
     fecha_fin,
-    status,
-    precio
+    status
+    // precio is removed - it's calculated from services
   } = req.body;
 
   // Primero obtener las imágenes actuales
@@ -116,8 +124,9 @@ exports.editarReparacion = (req, res) => {
       eliminarImagen(imagenAntesAntigua);
     }
 
+    // Price is calculated from services, so we don't update it manually
     const sql = `UPDATE reparaciones 
-                 SET tipo_reparacion=?, descripcion=?, fecha_inicio=?, fecha_fin=?, status=?, precio=?, imagen_antes=?, imagen_despues=? 
+                 SET tipo_reparacion=?, descripcion=?, fecha_inicio=?, fecha_fin=?, status=?, imagen_antes=?, imagen_despues=? 
                  WHERE id=?`;
 
     db.query(sql, [
@@ -126,7 +135,6 @@ exports.editarReparacion = (req, res) => {
       fecha_inicio,
       fecha_fin,
       status,
-      precio,
       nuevaRutaImgAntes,
       nuevaRutaImgDespues,
       id
@@ -158,7 +166,8 @@ exports.obtenerReparacionPorId = (req, res) => {
   const sql = `
     SELECT r.*, v.modelo, v.placa,
            v.usuario_id           AS owner_id,
-           u.nombre_completo      AS cliente
+           u.nombre_completo      AS cliente,
+           (SELECT COUNT(*) FROM servicios s WHERE s.reparacion_id = r.id) AS tiene_servicios
     FROM   reparaciones r
     JOIN   vehiculos    v ON r.vehiculo_id = v.id
     JOIN   usuarios     u ON v.usuario_id = u.id
@@ -179,7 +188,14 @@ exports.obtenerReparacionPorId = (req, res) => {
       return res.status(403).json({ error: "No tienes acceso a esta reparación" });
     }
 
-    res.json(rep);
+    // Format response: precio will be NULL if no services
+    const formatted = {
+      ...rep,
+      precio: rep.precio === null ? null : parseFloat(rep.precio),
+      tiene_servicios: rep.tiene_servicios > 0
+    };
+
+    res.json(formatted);
   });
 };
 

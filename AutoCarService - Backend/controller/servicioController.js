@@ -1,5 +1,6 @@
 const db = require('../models/db');
 const { recalcularPrecio } = require('../helpers/reparaciones');
+const { calcularPrecioServicio } = require('../helpers/servicios');
 const pool = require('../models/db');
 const poolPromise = pool.promise(); // Pool con promesas para transacciones  
 
@@ -46,7 +47,7 @@ exports.crearServicio = async (req, res) => {
       descripcion,
       fecha_inicio,
       fecha_fin,
-      precio,
+      costo_mano_obra,
       reparacion_id,
       repuestos, // <-- array de { repuesto_id, cantidad }
     } = req.body;
@@ -57,29 +58,41 @@ exports.crearServicio = async (req, res) => {
       });
     }
 
+    // Validate labor cost
+    const costoManoObra = parseFloat(costo_mano_obra) || 0;
+    if (costoManoObra < 0) {
+      return res.status(400).json({
+        error: 'costo_mano_obra debe ser un número mayor o igual a 0',
+      });
+    }
+
     const conn = await poolPromise.getConnection();
     try {
       await conn.beginTransaction();
 
-      // 1) Insertar el servicio
+      // 1) Calculate total service price (labor + spare parts)
+      const precioTotal = await calcularPrecioServicio(costoManoObra, repuestos || []);
+
+      // 2) Insertar el servicio
       const [result] = await conn.query(
         `INSERT INTO servicios
-           (nombre_servicio, descripcion,
+           (nombre_servicio, descripcion, costo_mano_obra,
             fecha_inicio, fecha_fin, precio, reparacion_id)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           nombre_servicio,
           descripcion,
+          costoManoObra,
           fecha_inicio || null,
           fecha_fin || null,
-          precio || 0,
+          precioTotal,
           reparacion_id,
         ]
       );
 
       const servicioId = result.insertId;
 
-      // 2) Insertar repuestos en tabla puente (si vienen)
+      // 3) Insertar repuestos en tabla puente (si vienen)
       if (Array.isArray(repuestos) && repuestos.length > 0) {
         const valores = [];
 
@@ -103,7 +116,7 @@ exports.crearServicio = async (req, res) => {
 
       await conn.commit();
 
-      // 3) Recalcular el precio total de la reparación
+      // 4) Recalcular el precio total de la reparación
       await recalcularPrecio(reparacion_id);
 
       return res.status(201).json({
@@ -157,8 +170,16 @@ exports.editarServicio = async (req, res) => {
     }
 
     const { id } = req.params;
-    const { nombre_servicio, descripcion, fecha_inicio, fecha_fin, precio } = req.body;
+    const { 
+      nombre_servicio, 
+      descripcion, 
+      fecha_inicio, 
+      fecha_fin, 
+      costo_mano_obra,
+      repuestos 
+    } = req.body;
 
+    // Get repair ID and existing service data
     const [rows] = await poolPromise.query(
       'SELECT reparacion_id FROM servicios WHERE id = ?',
       [id]
@@ -166,16 +187,62 @@ exports.editarServicio = async (req, res) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Servicio no encontrado' });
     const reparacionId = rows[0].reparacion_id;
 
-    await poolPromise.query(
-      `UPDATE servicios
-       SET nombre_servicio = ?, descripcion = ?, fecha_inicio = ?, fecha_fin = ?, precio = ?
-       WHERE id = ?`,
-      [nombre_servicio, descripcion, fecha_inicio, fecha_fin, precio, id]
-    );
+    // Validate labor cost
+    const costoManoObra = parseFloat(costo_mano_obra) || 0;
+    if (costoManoObra < 0) {
+      return res.status(400).json({
+        error: 'costo_mano_obra debe ser un número mayor o igual a 0',
+      });
+    }
 
-    await recalcularPrecio(reparacionId);
+    const conn = await poolPromise.getConnection();
+    try {
+      await conn.beginTransaction();
 
-    res.json({ message: 'Servicio actualizado correctamente' });
+      // Calculate new total price
+      const precioTotal = await calcularPrecioServicio(costoManoObra, repuestos || []);
+
+      // Update service
+      await conn.query(
+        `UPDATE servicios
+         SET nombre_servicio = ?, descripcion = ?, fecha_inicio = ?, fecha_fin = ?, 
+             costo_mano_obra = ?, precio = ?
+         WHERE id = ?`,
+        [nombre_servicio, descripcion, fecha_inicio, fecha_fin, costoManoObra, precioTotal, id]
+      );
+
+      // Delete existing spare parts associations
+      await conn.query('DELETE FROM servicio_repuesto WHERE servicio_id = ?', [id]);
+
+      // Insert new spare parts associations
+      if (Array.isArray(repuestos) && repuestos.length > 0) {
+        const valores = [];
+        repuestos.forEach((r) => {
+          const repuestoId = Number(r.repuesto_id);
+          const cantidad = Number(r.cantidad) || 1;
+          if (repuestoId && cantidad > 0) {
+            valores.push([id, repuestoId, cantidad]);
+          }
+        });
+
+        if (valores.length > 0) {
+          await conn.query(
+            `INSERT INTO servicio_repuesto (servicio_id, repuesto_id, cantidad) VALUES ?`,
+            [valores]
+          );
+        }
+      }
+
+      await conn.commit();
+      await recalcularPrecio(reparacionId);
+
+      res.json({ message: 'Servicio actualizado correctamente' });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
