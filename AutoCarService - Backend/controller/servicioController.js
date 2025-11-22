@@ -2,8 +2,9 @@ const db = require('../models/db');
 const { recalcularPrecio } = require('../helpers/reparaciones');
 const { calcularPrecioServicio } = require('../helpers/servicios');
 const pool = require('../models/db');
-const poolPromise = pool.promise(); // Pool con promesas para transacciones  
+const poolPromise = pool.promise();  
 
+//111
 // Crear servicio (solo mecánico o admin)
 /*
 exports.crearServicio = (req, res) => {
@@ -35,7 +36,7 @@ exports.crearServicio = (req, res) => {
 // Crear servicio (solo mecánico o admin)
 exports.crearServicio = async (req, res) => {
   try {
-    // Cliente (rol 1) NO puede crear servicios
+    // Cliente no puede crear servicios
     if (req.user.rol_id === 1) {
       return res
         .status(403)
@@ -47,9 +48,9 @@ exports.crearServicio = async (req, res) => {
       descripcion,
       fecha_inicio,
       fecha_fin,
-      costo_mano_obra,
+      costo_mano_obra,   
       reparacion_id,
-      repuestos, // <-- array de { repuesto_id, cantidad }
+      repuestos,       // array de { repuesto_id, cantidad }
     } = req.body;
 
     if (!nombre_servicio || !descripcion || !reparacion_id) {
@@ -58,47 +59,39 @@ exports.crearServicio = async (req, res) => {
       });
     }
 
-    // Validate labor cost
-    const costoManoObra = parseFloat(costo_mano_obra) || 0;
-    if (costoManoObra < 0) {
-      return res.status(400).json({
-        error: 'costo_mano_obra debe ser un número mayor o igual a 0',
-      });
-    }
+    const conn = await db.promise().getConnection();
 
-    const conn = await poolPromise.getConnection();
     try {
       await conn.beginTransaction();
 
-      // 1) Calculate total service price (labor + spare parts)
-      const precioTotal = await calcularPrecioServicio(costoManoObra, repuestos || []);
+      const manoObra = parseFloat(costo_mano_obra) || 0;
 
-      // 2) Insertar el servicio
+      // Insertar el servicio con precio temporal = mano de obra
       const [result] = await conn.query(
         `INSERT INTO servicios
-           (nombre_servicio, descripcion, costo_mano_obra,
+           (nombre_servicio, descripcion,
             fecha_inicio, fecha_fin, precio, reparacion_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
           nombre_servicio,
           descripcion,
-          costoManoObra,
           fecha_inicio || null,
           fecha_fin || null,
-          precioTotal,
+          manoObra,          
           reparacion_id,
         ]
       );
 
       const servicioId = result.insertId;
 
-      // 3) Insertar repuestos en tabla puente (si vienen)
+      // Insertar repuestos en tabla puente intermedia
       if (Array.isArray(repuestos) && repuestos.length > 0) {
         const valores = [];
 
         repuestos.forEach((r) => {
           const repuestoId = Number(r.repuesto_id);
           const cantidad = Number(r.cantidad) || 1;
+
           if (repuestoId && cantidad > 0) {
             valores.push([servicioId, repuestoId, cantidad]);
           }
@@ -106,22 +99,40 @@ exports.crearServicio = async (req, res) => {
 
         if (valores.length > 0) {
           await conn.query(
-            `INSERT INTO servicio_repuesto
-               (servicio_id, repuesto_id, cantidad)
+            `INSERT INTO servicio_repuesto (servicio_id, repuesto_id, cantidad)
              VALUES ?`,
             [valores]
           );
         }
       }
 
+      // Calcular costo de repuestos para este servicio
+      const [repCostRows] = await conn.query(
+        `SELECT IFNULL(SUM(sr.cantidad * r.precio_unitario), 0) AS total_repuestos
+         FROM servicio_repuesto sr
+         JOIN repuestos r ON r.id = sr.repuesto_id
+         WHERE sr.servicio_id = ?`,
+        [servicioId]
+      );
+
+      const totalRepuestos = Number(repCostRows[0].total_repuestos) || 0;
+      const totalServicio  = manoObra + totalRepuestos;
+
+      // Actualizar precio final del servicio = mano de obra + repuestos
+      await conn.query(
+        'UPDATE servicios SET precio = ? WHERE id = ?',
+        [totalServicio, servicioId]
+      );
+
       await conn.commit();
 
-      // 4) Recalcular el precio total de la reparación
+      // Recalcular total de la reparación
       await recalcularPrecio(reparacion_id);
 
       return res.status(201).json({
         message: 'Servicio agregado correctamente',
         servicio_id: servicioId,
+        precio_total: totalServicio,
       });
     } catch (err) {
       await conn.rollback();
@@ -135,6 +146,7 @@ exports.crearServicio = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
 
 
 exports.obtenerPorReparacion = (req, res) => {
@@ -163,6 +175,7 @@ exports.obtenerPorReparacion = (req, res) => {
 };
 
 // Editar servicio
+/*
 exports.editarServicio = async (req, res) => {
   try {
     if (req.user.rol_id === 1) {
@@ -247,6 +260,134 @@ exports.editarServicio = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+*/
+
+
+// Editar servicio (actualiza repuestos y recalcula precio final)
+exports.editarServicio = async (req, res) => {
+  try {
+    if (req.user.rol_id === 1) {
+      return res
+        .status(403)
+        .json({ error: 'No tienes permiso para editar servicios.' });
+    }
+
+    const { id } = req.params;
+    const {
+      nombre_servicio,
+      descripcion,
+      fecha_inicio,
+      fecha_fin,
+      costo_mano_obra,  
+      repuestos,  // array de { repuesto_id, cantidad }
+    } = req.body;
+
+    if (!nombre_servicio || !descripcion) {
+      return res.status(400).json({
+        error: 'nombre_servicio y descripcion son obligatorios',
+      });
+    }
+
+    const conn = await db.promise().getConnection();
+
+    try {
+      await conn.beginTransaction();
+
+      // Obtener reparacion_id del servicio
+      const [rows] = await conn.query(
+        'SELECT reparacion_id FROM servicios WHERE id = ?',
+        [id]
+      );
+      if (rows.length === 0) {
+        await conn.rollback();
+        return res.status(404).json({ error: 'Servicio no encontrado' });
+      }
+      const reparacionId = rows[0].reparacion_id;
+
+      const manoObra = parseFloat(costo_mano_obra) || 0;
+
+      // Actualizar datos básicos del servicio
+      await conn.query(
+        `UPDATE servicios
+         SET nombre_servicio = ?, descripcion = ?, fecha_inicio = ?, fecha_fin = ?, precio = ?
+         WHERE id = ?`,
+        [
+          nombre_servicio,
+          descripcion,
+          fecha_inicio || null,
+          fecha_fin || null,
+          manoObra,
+          id,
+        ]
+      );
+
+      //Borrar repuestos actuales del servicio
+      await conn.query(
+        'DELETE FROM servicio_repuesto WHERE servicio_id = ?',
+        [id]
+      );
+
+      //Insertar nuevos repuestos
+      if (Array.isArray(repuestos) && repuestos.length > 0) {
+        const valores = [];
+
+        repuestos.forEach((r) => {
+          const repuestoId = Number(r.repuesto_id);
+          const cantidad = Number(r.cantidad) || 1;
+
+          if (repuestoId && cantidad > 0) {
+            valores.push([id, repuestoId, cantidad]);
+          }
+        });
+
+        if (valores.length > 0) {
+          await conn.query(
+            `INSERT INTO servicio_repuesto (servicio_id, repuesto_id, cantidad)
+             VALUES ?`,
+            [valores]
+          );
+        }
+      }
+
+      //Calcular nuevo costo de repuestos
+      const [repCostRows] = await conn.query(
+        `SELECT IFNULL(SUM(sr.cantidad * r.precio_unitario), 0) AS total_repuestos
+         FROM servicio_repuesto sr
+         JOIN repuestos r ON r.id = sr.repuesto_id
+         WHERE sr.servicio_id = ?`,
+        [id]
+      );
+
+      const totalRepuestos = Number(repCostRows[0].total_repuestos) || 0;
+      const totalServicio  = manoObra + totalRepuestos;
+
+      //Actualizar precio final del servicio
+      await conn.query(
+        'UPDATE servicios SET precio = ? WHERE id = ?',
+        [totalServicio, id]
+      );
+
+      await conn.commit();
+
+      //Recalcular total de la reparación
+      await recalcularPrecio(reparacionId);
+
+      return res.json({
+        message: 'Servicio actualizado correctamente',
+        precio_total: totalServicio,
+      });
+    } catch (err) {
+      await conn.rollback();
+      console.error('Error al actualizar servicio:', err);
+      return res.status(500).json({ error: err.message });
+    } finally {
+      conn.release();
+    }
+  } catch (err) {
+    console.error('Error general en editarServicio:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
 
 // Eliminar servicio
 exports.eliminarServicio = async (req, res) => {
@@ -274,13 +415,12 @@ exports.eliminarServicio = async (req, res) => {
   }
 };
 
-// GET /api/servicios/:id/completo
 // Devuelve datos del servicio con sus repuestos asociados
 exports.obtenerServicioCompleto = async (req, res) => {
   const { id } = req.params;
 
   try {
-    // 1) Datos del servicio
+    //Datos del servicio
     const [servRows] = await poolPromise.query(
       `SELECT s.*,
               r.fecha_inicio AS reparacion_fecha_inicio,
@@ -296,10 +436,11 @@ exports.obtenerServicioCompleto = async (req, res) => {
       return res.status(404).json({ error: 'Servicio no encontrado' });
     }
 
+    
     const servicio = servRows[0];
 
-    // 2) Repuestos usados en ese servicio
-    const [repRows] = await poolPromise.query(
+    //Repuestos asociados al servicio
+    const [repRows] = await db.promise().query(
       `SELECT sr.repuesto_id,
               sr.cantidad,
               rp.nombre,
@@ -312,7 +453,23 @@ exports.obtenerServicioCompleto = async (req, res) => {
       [id]
     );
 
-    servicio.repuestos = repRows; // array de repuestos
+    servicio.repuestos = repRows;
+
+    //Calcular total de repuestos
+    let totalRepuestos = 0;
+    for (const r of repRows) {
+      const precio = Number(r.precio_unitario) || 0;
+      const cant   = Number(r.cantidad) || 0;
+      totalRepuestos += precio * cant;
+    }
+
+    //Separar mano de obra del total
+    const precioTotal = Number(servicio.precio) || 0;
+    let manoObra = precioTotal - totalRepuestos;
+    if (manoObra < 0) manoObra = 0;
+
+    servicio.total_repuestos = totalRepuestos;
+    servicio.mano_obra       = manoObra;
 
     return res.json(servicio);
   } catch (err) {
@@ -320,3 +477,4 @@ exports.obtenerServicioCompleto = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
