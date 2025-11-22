@@ -105,11 +105,14 @@ exports.crearServicio = async (req, res) => {
         });
 
         if (valores.length > 0) {
+          // Insertar múltiples filas usando múltiples VALUES
+          const placeholders = valores.map(() => '(?, ?, ?)').join(',');
+          const flatValues = valores.flat();
           await conn.query(
             `INSERT INTO servicio_repuesto
                (servicio_id, repuesto_id, cantidad)
-             VALUES ?`,
-            [valores]
+             VALUES ${placeholders}`,
+            flatValues
           );
         }
       }

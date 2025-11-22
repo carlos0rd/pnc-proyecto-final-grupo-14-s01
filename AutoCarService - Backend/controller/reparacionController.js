@@ -13,7 +13,8 @@ exports.crearReparacion = (req, res) => {
     fecha_inicio,
     fecha_fin,
     status,
-    vehiculo_id
+    vehiculo_id,
+    comentarios_internos
   } = req.body;
 
   // Procesar la imagen "antes" (si la enviaron)
@@ -22,10 +23,10 @@ exports.crearReparacion = (req, res) => {
     ? `/imagenes/${req.files.imagen_antes[0].filename}`
     : null;
 
-  // Price is now calculated from services, so set to NULL initially
+  // Price is now calculated from services, so set to 0 initially
   const sql = `INSERT INTO reparaciones 
-  (tipo_reparacion, descripcion, fecha_inicio, fecha_fin, status, precio, imagen_antes, vehiculo_id, mecanico_id) 
-  VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`;
+  (tipo_reparacion, descripcion, fecha_inicio, fecha_fin, status, precio, imagen_antes, comentarios_internos, vehiculo_id, mecanico_id) 
+  VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`;
 
   db.query(sql, [
     tipo_reparacion,
@@ -34,6 +35,7 @@ exports.crearReparacion = (req, res) => {
     fecha_fin,
     status,
     imagenAntesRuta,
+    comentarios_internos || null,
     vehiculo_id,
     req.user.id
   ], (err, result) => {
@@ -64,11 +66,21 @@ exports.obtenerReparaciones = (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     
     // Format results: precio will be NULL if no services, or the calculated sum
-    const formatted = results.map(r => ({
-      ...r,
-      precio: r.precio === null ? null : parseFloat(r.precio),
-      tiene_servicios: r.tiene_servicios > 0
-    }));
+    // Ocultar comentarios_internos para clientes (rol_id === 1)
+    const formatted = results.map(r => {
+      const result = {
+        ...r,
+        precio: r.precio === null ? null : parseFloat(r.precio),
+        tiene_servicios: r.tiene_servicios > 0
+      };
+      
+      // Si es cliente, no incluir comentarios_internos
+      if (rol_id === 1) {
+        delete result.comentarios_internos;
+      }
+      
+      return result;
+    });
     
     res.json(formatted);
   });
@@ -85,7 +97,8 @@ exports.editarReparacion = (req, res) => {
     descripcion,
     fecha_inicio,
     fecha_fin,
-    status
+    status,
+    comentarios_internos
     // precio is removed - it's calculated from services
   } = req.body;
 
@@ -126,7 +139,7 @@ exports.editarReparacion = (req, res) => {
 
     // Price is calculated from services, so we don't update it manually
     const sql = `UPDATE reparaciones 
-                 SET tipo_reparacion=?, descripcion=?, fecha_inicio=?, fecha_fin=?, status=?, imagen_antes=?, imagen_despues=? 
+                 SET tipo_reparacion=?, descripcion=?, fecha_inicio=?, fecha_fin=?, status=?, imagen_antes=?, imagen_despues=?, comentarios_internos=? 
                  WHERE id=?`;
 
     db.query(sql, [
@@ -137,6 +150,7 @@ exports.editarReparacion = (req, res) => {
       status,
       nuevaRutaImgAntes,
       nuevaRutaImgDespues,
+      comentarios_internos || null,
       id
     ], (err2, result) => {
       if (err2) return res.status(500).json({ error: err2.message });
@@ -195,6 +209,11 @@ exports.obtenerReparacionPorId = (req, res) => {
       tiene_servicios: rep.tiene_servicios > 0
     };
 
+    // Ocultar comentarios_internos para clientes (rol_id === 1)
+    if (req.user.rol_id === 1) {
+      delete formatted.comentarios_internos;
+    }
+
     res.json(formatted);
   });
 };
@@ -219,6 +238,12 @@ exports.obtenerPorVehiculo = (req, res) => {
     if (req.user.rol_id === 1) {
       // Filtrar por cliente dueño del vehículo
       results = results.filter(r => r.usuario_id == req.user.id);
+      
+      // Ocultar comentarios_internos para clientes
+      results = results.map(r => {
+        const { comentarios_internos, ...rest } = r;
+        return rest;
+      });
     }
 
     res.json(results);
