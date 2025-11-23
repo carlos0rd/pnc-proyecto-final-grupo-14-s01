@@ -15,6 +15,7 @@ exports.crearReparacion = (req, res) => {
     status,
     vehiculo_id,
     comentarios_internos,
+    fecha_proximo_mantenimiento,
   } = req.body;
 
   const imagenAntesRuta =
@@ -25,8 +26,8 @@ exports.crearReparacion = (req, res) => {
       : null;
 
   const sql = `INSERT INTO reparaciones 
-    (tipo_reparacion, descripcion, fecha_inicio, fecha_fin, status, precio, imagen_antes, comentarios_internos, vehiculo_id, mecanico_id) 
-    VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`;
+    (tipo_reparacion, descripcion, fecha_inicio, fecha_fin, status, precio, imagen_antes, comentarios_internos, vehiculo_id, mecanico_id, fecha_proximo_mantenimiento) 
+    VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`;
 
   db.query(
     sql,
@@ -40,6 +41,7 @@ exports.crearReparacion = (req, res) => {
       comentarios_internos || null,
       vehiculo_id,
       req.user.id,
+      fecha_proximo_mantenimiento || null,
     ],
     (err, result) => {
       if (err) return res.status(500).json({ error: err.message });
@@ -104,6 +106,7 @@ exports.editarReparacion = (req, res) => {
     fecha_fin,
     status,
     comentarios_internos,
+    fecha_proximo_mantenimiento,
   } = req.body;
 
   db.query(
@@ -161,7 +164,7 @@ exports.editarReparacion = (req, res) => {
       }
 
       const sql = `UPDATE reparaciones 
-                   SET tipo_reparacion=?, descripcion=?, fecha_inicio=?, fecha_fin=?, status=?, imagen_antes=?, imagen_despues=?, comentarios_internos=? 
+                   SET tipo_reparacion=?, descripcion=?, fecha_inicio=?, fecha_fin=?, status=?, imagen_antes=?, imagen_despues=?, comentarios_internos=?, fecha_proximo_mantenimiento=? 
                    WHERE id=?`;
 
       db.query(
@@ -175,6 +178,7 @@ exports.editarReparacion = (req, res) => {
           nuevaRutaImgAntes,
           nuevaRutaImgDespues,
           comentarios_internos || null,
+          fecha_proximo_mantenimiento || null,
           id,
         ],
         (err2, result) => {
@@ -370,4 +374,39 @@ exports.recalcularValorReparacion = (reparacionId) => {
     )
     WHERE r.id = ?`;
   return db.query(sql, [reparacionId, reparacionId]);
+};
+
+// Obtener reparaciones con mantenimiento próximo (para notificaciones del cliente)
+exports.obtenerMantenimientosProximos = (req, res) => {
+  const { rol_id, id } = req.user;
+
+  // Solo clientes pueden ver sus propios mantenimientos próximos
+  if (rol_id !== 1) {
+    return res.status(403).json({ error: 'Solo los clientes pueden ver sus mantenimientos próximos' });
+  }
+
+  // Obtener reparaciones con fecha de mantenimiento hoy o mañana
+  // Y que no estén cerradas o anuladas
+  const hoy = new Date().toISOString().split('T')[0];
+  const mañana = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  const sql = `
+    SELECT r.id, r.tipo_reparacion, r.fecha_proximo_mantenimiento,
+           v.marca, v.modelo, v.placa, v.id AS vehiculo_id
+    FROM reparaciones r
+    JOIN vehiculos v ON r.vehiculo_id = v.id
+    WHERE v.usuario_id = ?
+      AND r.fecha_proximo_mantenimiento IS NOT NULL
+      AND r.fecha_proximo_mantenimiento BETWEEN ? AND ?
+      AND r.status NOT IN ('Finalizado', 'Rechazado por el cliente', 'Aprobada por el cliente')
+    ORDER BY r.fecha_proximo_mantenimiento ASC
+  `;
+
+  db.query(sql, [id, hoy, mañana], (err, results) => {
+    if (err) {
+      console.error('[Mantenimientos Próximos] Error en query:', err);
+      return res.status(500).json({ error: err.message });
+    }
+    res.json(results);
+  });
 };

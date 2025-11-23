@@ -11,6 +11,7 @@ const {
   obtenerPorVehiculo,
   obtenerReparacionPorId,
   decisionCotizacion,          // 👈 YA VIENE DESDE AQUÍ
+  obtenerMantenimientosProximos,
 } = require('../controller/reparacionController');
 
 const verifyToken = require('../middlewares/authMiddleware');
@@ -46,6 +47,7 @@ router.post(
 );
 
 router.get('/', obtenerReparaciones);
+router.get('/mantenimientos-proximos', obtenerMantenimientosProximos);
 router.get('/vehiculo/:identificador', obtenerPorVehiculo);
 router.get('/:id', obtenerReparacionPorId);
 
