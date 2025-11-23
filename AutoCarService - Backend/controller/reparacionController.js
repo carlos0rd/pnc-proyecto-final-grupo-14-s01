@@ -280,7 +280,7 @@ exports.obtenerPorVehiculo = (req, res) => {
   });
 };
 
-// 🔹 HU3: aprobar o rechazar cotización del cliente
+// HU3 + HU4: aprobar/rechazar cotización del cliente y registrar historial
 exports.decisionCotizacion = (req, res) => {
   const { id } = req.params;
   const { decision } = req.body; // "aprobada" | "rechazada"
@@ -291,50 +291,73 @@ exports.decisionCotizacion = (req, res) => {
     });
   }
 
-  // 👇 Estos textos DEBEN coincidir EXACTAMENTE con el ENUM de la BD
+  // Estos textos deben coincidir con el ENUM de la tabla reparaciones.status
   const nuevoStatus =
     decision === 'aprobada'
-      ? 'Aprobada por el cliente'        // <-- igualito al ENUM
-      : 'Rechazado por el cliente';      // <-- igualito al ENUM
+      ? 'Aprobada por el cliente'
+      : 'Rechazado por el cliente';
 
-  const sql = `
+  const sqlUpdate = `
     UPDATE reparaciones 
     SET status = ?
     WHERE id = ?
   `;
 
-  db.query(sql, [nuevoStatus, id], (err, result) => {
+  db.query(sqlUpdate, [nuevoStatus, id], (err, result) => {
     if (err) {
       console.error('Error al actualizar reparación:', err);
       return res.status(500).json({ error: err.message });
     }
 
     if (result.affectedRows === 0) {
-      return res
-        .status(404)
-        .json({ error: 'Reparación no encontrada.' });
+      return res.status(404).json({ error: 'Reparación no encontrada.' });
     }
 
-    db.query(
-      `
-      SELECT id, descripcion, fecha_inicio, fecha_fin, status, precio, imagen_antes, imagen_despues
-      FROM reparaciones
-      WHERE id = ?
-    `,
-      [id],
-      (err2, rows) => {
-        if (err2) {
-          console.error(
-            'Error al obtener reparación actualizada:',
-            err2
-          );
-          return res.status(500).json({ error: err2.message });
-        }
-        res.json(rows[0]);
+    // 🔹 HU4: registrar historial de aprobación/rechazo
+    const historialSql = `
+      INSERT INTO aprobacion_cotizacion
+        (reparacion_id, cliente_id, estado, fecha_hora)
+      VALUES (?, ?, ?, NOW())
+    `;
+
+    const clienteId = req.user.id; // viene del token (rol cliente)
+
+    db.query(historialSql, [id, clienteId, decision], (errHist) => {
+      if (errHist) {
+        console.error('Error al guardar historial de aprobación:', errHist);
+        return res.status(500).json({ error: errHist.message });
       }
-    );
+
+      // Devolver la reparación actualizada al frontend (como ya hacíamos)
+      db.query(
+        `
+        SELECT id,
+               descripcion,
+               fecha_inicio,
+               fecha_fin,
+               status,
+               precio,
+               imagen_antes,
+               imagen_despues
+        FROM reparaciones
+        WHERE id = ?
+        `,
+        [id],
+        (err2, rows) => {
+          if (err2) {
+            console.error(
+              'Error al obtener reparación actualizada:',
+              err2
+            );
+            return res.status(500).json({ error: err2.message });
+          }
+          res.json(rows[0]);
+        }
+      );
+    });
   });
 };
+
 
 
 exports.recalcularValorReparacion = (reparacionId) => {

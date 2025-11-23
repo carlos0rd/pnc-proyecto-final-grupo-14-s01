@@ -218,3 +218,37 @@ ALTER TABLE reparaciones
 
 
 
+
+  -- historia 3 y 4 de aprobacion y rechazo y historial 
+  -- 3
+  ALTER TABLE reparaciones
+MODIFY status ENUM(
+  'Pendiente',
+  'En curso',
+  'Finalizado',
+  'Rechazado por el cliente',
+  'Aprobada por el cliente'
+) NOT NULL;
+
+--4
+CREATE TABLE IF NOT EXISTS aprobacion_cotizacion (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  reparacion_id INT NOT NULL,
+  cliente_id INT NOT NULL,
+  estado ENUM('aprobada', 'rechazada') NOT NULL,
+  fecha_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- opcionalmente podrías guardar más cosas (precio, comentario, etc.)
+  
+  CONSTRAINT fk_aprobacion_reparacion
+    FOREIGN KEY (reparacion_id) REFERENCES reparaciones(id),
+  CONSTRAINT fk_aprobacion_cliente
+    FOREIGN KEY (cliente_id) REFERENCES usuarios(id)
+);
+
+
+
+
+
+
+
+
