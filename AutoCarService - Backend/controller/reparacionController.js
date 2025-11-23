@@ -14,34 +14,40 @@ exports.crearReparacion = (req, res) => {
     fecha_fin,
     status,
     vehiculo_id,
-    comentarios_internos
+    comentarios_internos,
   } = req.body;
 
-  // Procesar la imagen "antes" (si la enviaron)
-  // upload.fields() guarda los archivos en req.files como un objeto
-  const imagenAntesRuta = req.files && req.files.imagen_antes && req.files.imagen_antes[0]
-    ? `/imagenes/${req.files.imagen_antes[0].filename}`
-    : null;
+  const imagenAntesRuta =
+    req.files &&
+    req.files.imagen_antes &&
+    req.files.imagen_antes[0]
+      ? `/imagenes/${req.files.imagen_antes[0].filename}`
+      : null;
 
-  // Price is now calculated from services, so set to 0 initially
   const sql = `INSERT INTO reparaciones 
-  (tipo_reparacion, descripcion, fecha_inicio, fecha_fin, status, precio, imagen_antes, comentarios_internos, vehiculo_id, mecanico_id) 
-  VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`;
+    (tipo_reparacion, descripcion, fecha_inicio, fecha_fin, status, precio, imagen_antes, comentarios_internos, vehiculo_id, mecanico_id) 
+    VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`;
 
-  db.query(sql, [
-    tipo_reparacion,
-    descripcion,
-    fecha_inicio,
-    fecha_fin,
-    status,
-    imagenAntesRuta,
-    comentarios_internos || null,
-    vehiculo_id,
-    req.user.id
-  ], (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ message: 'Reparación registrada correctamente' });
-  });
+  db.query(
+    sql,
+    [
+      tipo_reparacion,
+      descripcion,
+      fecha_inicio,
+      fecha_fin,
+      status,
+      imagenAntesRuta,
+      comentarios_internos || null,
+      vehiculo_id,
+      req.user.id,
+    ],
+    (err, result) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res
+        .status(201)
+        .json({ message: 'Reparación registrada correctamente' });
+    }
+  );
 };
 
 exports.obtenerReparaciones = (req, res) => {
@@ -64,31 +70,30 @@ exports.obtenerReparaciones = (req, res) => {
 
   db.query(sql, params, (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
-    
-    // Format results: precio will be NULL if no services, or the calculated sum
-    // Ocultar comentarios_internos para clientes (rol_id === 1)
-    const formatted = results.map(r => {
+
+    const formatted = results.map((r) => {
       const result = {
         ...r,
         precio: r.precio === null ? null : parseFloat(r.precio),
-        tiene_servicios: r.tiene_servicios > 0
+        tiene_servicios: r.tiene_servicios > 0,
       };
-      
-      // Si es cliente, no incluir comentarios_internos
+
       if (rol_id === 1) {
         delete result.comentarios_internos;
       }
-      
+
       return result;
     });
-    
+
     res.json(formatted);
   });
 };
 
 exports.editarReparacion = (req, res) => {
   if (req.user.rol_id === 1) {
-    return res.status(403).json({ error: 'No tienes permiso para editar reparaciones.' });
+    return res
+      .status(403)
+      .json({ error: 'No tienes permiso para editar reparaciones.' });
   }
 
   const { id } = req.params;
@@ -98,70 +103,94 @@ exports.editarReparacion = (req, res) => {
     fecha_inicio,
     fecha_fin,
     status,
-    comentarios_internos
-    // precio is removed - it's calculated from services
+    comentarios_internos,
   } = req.body;
 
-  // Primero obtener las imágenes actuales
-  db.query("SELECT imagen_antes, imagen_despues FROM reparaciones WHERE id = ?", [id], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (rows.length === 0) return res.status(404).json({ error: "Reparación no encontrada" });
+  db.query(
+    'SELECT imagen_antes, imagen_despues FROM reparaciones WHERE id = ?',
+    [id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (rows.length === 0)
+        return res
+          .status(404)
+          .json({ error: 'Reparación no encontrada' });
 
-    const imagenAntesAntigua = rows[0].imagen_antes;
-    const imagenDespuesAntigua = rows[0].imagen_despues;
-    let nuevaRutaImgAntes = imagenAntesAntigua; // por defecto se conserva la misma
-    let nuevaRutaImgDespues = imagenDespuesAntigua; // por defecto se conserva la misma
+      const imagenAntesAntigua = rows[0].imagen_antes;
+      const imagenDespuesAntigua = rows[0].imagen_despues;
+      let nuevaRutaImgAntes = imagenAntesAntigua;
+      let nuevaRutaImgDespues = imagenDespuesAntigua;
 
-    // Función auxiliar para eliminar imagen antigua
-    const eliminarImagen = (rutaImagen) => {
-      if (rutaImagen) {
-        const nombreViejo = path.basename(rutaImagen);
-        const rutaFisica = path.join(__dirname, "..", "imagenes", nombreViejo);
-        if (fs.existsSync(rutaFisica)) {
-          fs.unlink(rutaFisica, (e) => e && console.log("No se pudo eliminar la imagen antigua:", e));
+      const eliminarImagen = (rutaImagen) => {
+        if (rutaImagen) {
+          const nombreViejo = path.basename(rutaImagen);
+          const rutaFisica = path.join(
+            __dirname,
+            '..',
+            'imagenes',
+            nombreViejo
+          );
+          if (fs.existsSync(rutaFisica)) {
+            fs.unlink(rutaFisica, (e) => {
+              if (e)
+                console.log(
+                  'No se pudo eliminar la imagen antigua:',
+                  e
+                );
+            });
+          }
         }
+      };
+
+      if (
+        req.files &&
+        req.files.imagen_despues &&
+        req.files.imagen_despues[0]
+      ) {
+        nuevaRutaImgDespues = `/imagenes/${req.files.imagen_despues[0].filename}`;
+        eliminarImagen(imagenDespuesAntigua);
       }
-    };
 
-    // Si se subió una nueva imagen "después"
-    if (req.files && req.files.imagen_despues && req.files.imagen_despues[0]) {
-      nuevaRutaImgDespues = `/imagenes/${req.files.imagen_despues[0].filename}`;
-      // Eliminar la imagen antigua si existe
-      eliminarImagen(imagenDespuesAntigua);
+      if (
+        req.files &&
+        req.files.imagen_antes &&
+        req.files.imagen_antes[0]
+      ) {
+        nuevaRutaImgAntes = `/imagenes/${req.files.imagen_antes[0].filename}`;
+        eliminarImagen(imagenAntesAntigua);
+      }
+
+      const sql = `UPDATE reparaciones 
+                   SET tipo_reparacion=?, descripcion=?, fecha_inicio=?, fecha_fin=?, status=?, imagen_antes=?, imagen_despues=?, comentarios_internos=? 
+                   WHERE id=?`;
+
+      db.query(
+        sql,
+        [
+          tipo_reparacion,
+          descripcion,
+          fecha_inicio,
+          fecha_fin,
+          status,
+          nuevaRutaImgAntes,
+          nuevaRutaImgDespues,
+          comentarios_internos || null,
+          id,
+        ],
+        (err2, result) => {
+          if (err2) return res.status(500).json({ error: err2.message });
+          res.json({ message: 'Reparación actualizada correctamente' });
+        }
+      );
     }
-
-    // Si se subió una nueva imagen "antes" (aunque normalmente solo se sube al crear)
-    if (req.files && req.files.imagen_antes && req.files.imagen_antes[0]) {
-      nuevaRutaImgAntes = `/imagenes/${req.files.imagen_antes[0].filename}`;
-      // Eliminar la imagen antigua si existe
-      eliminarImagen(imagenAntesAntigua);
-    }
-
-    // Price is calculated from services, so we don't update it manually
-    const sql = `UPDATE reparaciones 
-                 SET tipo_reparacion=?, descripcion=?, fecha_inicio=?, fecha_fin=?, status=?, imagen_antes=?, imagen_despues=?, comentarios_internos=? 
-                 WHERE id=?`;
-
-    db.query(sql, [
-      tipo_reparacion,
-      descripcion,
-      fecha_inicio,
-      fecha_fin,
-      status,
-      nuevaRutaImgAntes,
-      nuevaRutaImgDespues,
-      comentarios_internos || null,
-      id
-    ], (err2, result) => {
-      if (err2) return res.status(500).json({ error: err2.message });
-      res.json({ message: 'Reparación actualizada correctamente' });
-    });
-  });
+  );
 };
 
 exports.eliminarReparacion = (req, res) => {
   if (req.user.rol_id === 1) {
-    return res.status(403).json({ error: 'No tienes permiso para eliminar reparaciones.' });
+    return res
+      .status(403)
+      .json({ error: 'No tienes permiso para eliminar reparaciones.' });
   }
 
   const { id } = req.params;
@@ -191,25 +220,26 @@ exports.obtenerReparacionPorId = (req, res) => {
   db.query(sql, [id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!results.length)
-      return res.status(404).json({ error: "Reparación no encontrada" });
+      return res
+        .status(404)
+        .json({ error: 'Reparación no encontrada' });
 
-    const rep      = results[0];
-    const ownerId  = Number(rep.owner_id);   // <- SIEMPRE número
-    const current  = Number(req.user.id);    // <- SIEMPRE número
+    const rep = results[0];
+    const ownerId = Number(rep.owner_id);
+    const current = Number(req.user.id);
 
-    // 🔒 Permiso sólo si es el dueño
     if (req.user.rol_id === 1 && ownerId !== current) {
-      return res.status(403).json({ error: "No tienes acceso a esta reparación" });
+      return res
+        .status(403)
+        .json({ error: 'No tienes acceso a esta reparación' });
     }
 
-    // Format response: precio will be NULL if no services
     const formatted = {
       ...rep,
       precio: rep.precio === null ? null : parseFloat(rep.precio),
-      tiene_servicios: rep.tiene_servicios > 0
+      tiene_servicios: rep.tiene_servicios > 0,
     };
 
-    // Ocultar comentarios_internos para clientes (rol_id === 1)
     if (req.user.rol_id === 1) {
       delete formatted.comentarios_internos;
     }
@@ -217,8 +247,6 @@ exports.obtenerReparacionPorId = (req, res) => {
     res.json(formatted);
   });
 };
-
-
 
 // Obtener reparaciones por vehículo ya sea por id o por placa
 exports.obtenerPorVehiculo = (req, res) => {
@@ -235,20 +263,79 @@ exports.obtenerPorVehiculo = (req, res) => {
   db.query(sql, [identificador, identificador], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
 
+    let filtered = results;
+
     if (req.user.rol_id === 1) {
-      // Filtrar por cliente dueño del vehículo
-      results = results.filter(r => r.usuario_id == req.user.id);
-      
-      // Ocultar comentarios_internos para clientes
-      results = results.map(r => {
+      filtered = filtered.filter(
+        (r) => r.usuario_id == req.user.id
+      );
+
+      filtered = filtered.map((r) => {
         const { comentarios_internos, ...rest } = r;
         return rest;
       });
     }
 
-    res.json(results);
+    res.json(filtered);
   });
 };
+
+// 🔹 HU3: aprobar o rechazar cotización del cliente
+exports.decisionCotizacion = (req, res) => {
+  const { id } = req.params;
+  const { decision } = req.body; // "aprobada" | "rechazada"
+
+  if (!['aprobada', 'rechazada'].includes(decision)) {
+    return res.status(400).json({
+      error: "La decisión debe ser 'aprobada' o 'rechazada'.",
+    });
+  }
+
+  // 👇 Estos textos DEBEN coincidir EXACTAMENTE con el ENUM de la BD
+  const nuevoStatus =
+    decision === 'aprobada'
+      ? 'Aprobada por el cliente'        // <-- igualito al ENUM
+      : 'Rechazado por el cliente';      // <-- igualito al ENUM
+
+  const sql = `
+    UPDATE reparaciones 
+    SET status = ?
+    WHERE id = ?
+  `;
+
+  db.query(sql, [nuevoStatus, id], (err, result) => {
+    if (err) {
+      console.error('Error al actualizar reparación:', err);
+      return res.status(500).json({ error: err.message });
+    }
+
+    if (result.affectedRows === 0) {
+      return res
+        .status(404)
+        .json({ error: 'Reparación no encontrada.' });
+    }
+
+    db.query(
+      `
+      SELECT id, descripcion, fecha_inicio, fecha_fin, status, precio, imagen_antes, imagen_despues
+      FROM reparaciones
+      WHERE id = ?
+    `,
+      [id],
+      (err2, rows) => {
+        if (err2) {
+          console.error(
+            'Error al obtener reparación actualizada:',
+            err2
+          );
+          return res.status(500).json({ error: err2.message });
+        }
+        res.json(rows[0]);
+      }
+    );
+  });
+};
+
 
 exports.recalcularValorReparacion = (reparacionId) => {
   const sql = `
