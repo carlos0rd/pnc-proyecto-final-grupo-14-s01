@@ -167,12 +167,12 @@ exports.obtenerPorReparacion = (req, res) => {
   db.query(sql, [reparacion_id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
 
-    if (req.user.rol_id === 1 && results.length) {
+    /*if (req.user.rol_id === 1 && results.length) {
       const owner = Number(results[0].owner_id);
       const me    = Number(req.user.id);
       if (owner !== me)
         return res.status(403).json({ error: "No tienes acceso a estos servicios" });
-    }
+    }*/
 
     res.json(results);
   });

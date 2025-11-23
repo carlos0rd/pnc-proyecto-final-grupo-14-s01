@@ -18,7 +18,7 @@ router.post('/', allowRoles(2, 3), crearServicio);
 router.get('/reparacion/:reparacion_id', verifyToken, obtenerPorReparacion);
 router.put('/:id', allowRoles(2, 3), editarServicio);
 router.delete('/:id', allowRoles(2, 3), eliminarServicio);
-router.get('/:id/completo', allowRoles(2,3), obtenerServicioCompleto);
+router.get('/:id/completo', allowRoles(1,2,3), obtenerServicioCompleto);
 
 
 
