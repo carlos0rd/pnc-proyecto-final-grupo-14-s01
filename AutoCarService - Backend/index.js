@@ -15,8 +15,22 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Configuración de CORS - permite desarrollo local y contenedores Docker
+const allowedOrigins = process.env.CORS_ORIGINS 
+  ? process.env.CORS_ORIGINS.split(',')
+  : ['http://localhost:5173', 'http://localhost', 'http://frontend'];
+
 app.use(cors({
-  origin: 'http://localhost:5173', // puerto de Vite
+  origin: function (origin, callback) {
+    // Permitir requests sin origin (como Postman o aplicaciones móviles)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Permitir todos los orígenes en desarrollo
+    }
+  },
   credentials: true              
 }));
 
@@ -33,8 +47,8 @@ app.use('/facturas', facturaRoutes);
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`);
 });
 
 

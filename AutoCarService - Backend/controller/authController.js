@@ -26,25 +26,46 @@ exports.register = async (req, res) => {
 exports.login = (req, res) => {
   const { email, contrasena } = req.body;
 
+  if (!email || !contrasena) {
+    return res.status(400).json({ error: 'Email y contraseña son requeridos' });
+  }
+
   const sql = `SELECT * FROM usuarios WHERE email = ?`;
 
   db.query(sql, [email], async (err, results) => {
-    if (err) return res.status(500).json({ error: 'Error en el servidor' });
+    if (err) {
+      console.error('Error en consulta de login:', err);
+      return res.status(500).json({ error: 'Error en el servidor' });
+    }
 
-    if (results.length === 0) return res.status(401).json({ error: 'Credenciales incorrectas' });
+    if (results.length === 0) {
+      return res.status(401).json({ error: 'Credenciales incorrectas' });
+    }
 
-    const user = results[0];
-    const match = await comparePassword(contrasena, user.contrasena);
+    try {
+      const user = results[0];
+      const match = await comparePassword(contrasena, user.contrasena);
 
-    if (!match) return res.status(401).json({ error: 'Credenciales incorrectas' });
+      if (!match) {
+        return res.status(401).json({ error: 'Credenciales incorrectas' });
+      }
 
-    //Configuracion del token JWT
-    const token = jwt.sign(
-      { id: user.id, rol_id: user.rol_id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+      //Configuracion del token JWT
+      if (!process.env.JWT_SECRET) {
+        console.error('JWT_SECRET no está definido');
+        return res.status(500).json({ error: 'Error de configuración del servidor' });
+      }
 
-    res.json({ token });
+      const token = jwt.sign(
+        { id: user.id, rol_id: user.rol_id, email: user.email },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+
+      res.json({ token });
+    } catch (error) {
+      console.error('Error en login:', error);
+      res.status(500).json({ error: 'Error en el servidor' });
+    }
   });
 };

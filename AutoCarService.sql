@@ -39,9 +39,13 @@ CREATE TABLE reparaciones (
   fecha_fin DATE,
   status ENUM('Pendiente', 'En curso', 'Finalizado', 'Rechazado por el cliente', 'Aprobado por el cliente') DEFAULT 'Pendiente',
   precio DECIMAL(10,2),
+  imagen_antes VARCHAR(255) NULL,
+  imagen_despues VARCHAR(255) NULL,
+  comentarios_internos TEXT NULL,
   vehiculo_id INT,
   mecanico_id INT,
   fecha_aprobacion DATETIME NULL,
+  fecha_proximo_mantenimiento DATE NULL,
   FOREIGN KEY (vehiculo_id) REFERENCES vehiculos(id) ON DELETE CASCADE,
   FOREIGN KEY (mecanico_id) REFERENCES usuarios(id) ON DELETE SET NULL
 );
@@ -60,16 +64,36 @@ CREATE TABLE servicios (
 	
 INSERT INTO roles (nombre) VALUES ('cliente'), ('mecanico'), ('admin');
 
+-- Crear usuario administrador por defecto
+-- Email: admin@autocare.com
+-- Contraseña: admin123
+-- NOTA: Cambiar la contraseña después del primer inicio de sesión
+INSERT INTO usuarios (
+  nombre_completo, 
+  email, 
+  contrasena, 
+  telefono, 
+  celular, 
+  rol_id
+) VALUES (
+  'Administrador',
+  'admin@autocare.com',
+  '$2b$10$aZq0w.IxRAjIEhy3mW2pM.lE2YIfM85pqDhfwBcB/JzrDnuchArcC', -- admin123
+  '0000000000',
+  '0000000000',
+  3 -- rol_id = 3 es administrador
+) ON DUPLICATE KEY UPDATE 
+  nombre_completo = 'Administrador',
+  contrasena = '$2b$10$ScccphMYfVGkJ3KfRIMWu./zUXUUS7PlBr2zoCmlMLvBWCR16yZYu';
+
 ALTER TABLE usuarios
 MODIFY COLUMN rol_id INT NOT NULL DEFAULT 1;
 
 ALTER TABLE reparaciones
   MODIFY precio DECIMAL(10,2) NOT NULL DEFAULT 0;
 
--- Agregar columnas para imágenes antes y después de la reparación
-ALTER TABLE reparaciones
-  ADD COLUMN imagen_antes VARCHAR(255) NULL AFTER precio,
-  ADD COLUMN imagen_despues VARCHAR(255) NULL AFTER imagen_antes;
+-- Nota: Las columnas imagen_antes, imagen_despues, comentarios_internos y fecha_proximo_mantenimiento
+-- ya están incluidas en el CREATE TABLE reparaciones, por lo que no necesitan ALTER TABLE
 
 -- Tabla de facturas
 CREATE TABLE IF NOT EXISTS facturas (
@@ -209,12 +233,8 @@ INSERT INTO repuestos (nombre, precio_unitario, categoria_id, descripcion, activ
 
 
 
-
-
--- Agregar columnas para imágenes antes y después de la reparación
-ALTER TABLE reparaciones
-  ADD COLUMN imagen_antes VARCHAR(255) NULL AFTER precio,
-  ADD COLUMN imagen_despues VARCHAR(255) NULL AFTER imagen_antes;
+-- Nota: Las columnas imagen_antes, imagen_despues, comentarios_internos y fecha_proximo_mantenimiento
+-- ya están incluidas en el CREATE TABLE reparaciones (líneas 34-47), por lo que no necesitan ALTER TABLE
 
 
 
